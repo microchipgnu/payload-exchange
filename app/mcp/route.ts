@@ -1,5 +1,5 @@
 import { createMcpHandler } from "mcp-handler";
-import { z } from "zod";
+import { z } from "zod/v3";
 import { APP_BASE_URL } from "@/lib/config";
 
 const getAppsSdkCompatibleHtml = async (baseUrl: string, path: string) => {

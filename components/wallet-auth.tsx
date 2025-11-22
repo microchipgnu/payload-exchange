@@ -6,9 +6,8 @@ import {
   useSolanaAddress,
 } from "@coinbase/cdp-hooks";
 import { AuthButton } from "@coinbase/cdp-react/components/AuthButton";
-import { useEffect, useState } from "react";
 
-function WalletAuthContent() {
+export const WalletAuth = () => {
   const { isSignedIn } = useIsSignedIn();
   const { evmAddress } = useEvmAddress();
   const { solanaAddress } = useSolanaAddress();
@@ -87,47 +86,4 @@ function WalletAuthContent() {
       </div>
     </div>
   );
-}
-
-export function WalletAuth() {
-  const [isInIframe, setIsInIframe] = useState(false);
-
-  useEffect(() => {
-    setIsInIframe(window.self !== window.top);
-  }, []);
-
-  // CDP requires domain whitelisting which doesn't work in ChatGPT's dynamic sandbox domains
-  // Show a message when running in iframe
-  if (isInIframe) {
-    return (
-      <div className="rounded-lg border border-yellow-200 bg-yellow-50 px-4 py-3 dark:border-yellow-800 dark:bg-yellow-950">
-        <div className="flex items-center gap-3">
-          <svg
-            aria-hidden="true"
-            className="h-5 w-5 flex-shrink-0 text-yellow-600 dark:text-yellow-400"
-            fill="currentColor"
-            viewBox="0 0 20 20"
-          >
-            <path
-              clipRule="evenodd"
-              d="M8.485 2.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.17 2.625-1.516 2.625H3.72c-1.347 0-2.189-1.458-1.515-2.625L8.485 2.495zM10 5a.75.75 0 01.75.75v3.5a.75.75 0 01-1.5 0v-3.5A.75.75 0 0110 5zm0 9a1 1 0 100-2 1 1 0 000 2z"
-              fillRule="evenodd"
-            />
-          </svg>
-          <div className="min-w-0 flex-1">
-            <p className="font-medium text-sm text-yellow-900 dark:text-yellow-100">
-              CDP Embedded Wallets require direct access
-            </p>
-            <p className="mt-1 text-xs text-yellow-800 dark:text-yellow-200">
-              CDP requires domain whitelisting which doesn&apos;t work in
-              ChatGPT&apos;s sandbox environment. Please access this app
-              directly at your deployed URL to use embedded wallets.
-            </p>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  return <WalletAuthContent />;
-}
+};
