@@ -1,6 +1,6 @@
 "use client";
 
-import { useIsSignedIn, useX402 } from "@coinbase/cdp-hooks";
+import { useEvmAddress, useIsSignedIn, useX402 } from "@coinbase/cdp-hooks";
 import { ChevronDown, RefreshCw } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -82,6 +82,9 @@ export const PaywallWidget = ({
 
   // Memoize formatted amount
   const formattedAmount = useMemo(() => formatUnits(maxValue, 6), [maxValue]);
+  console.log("maxValue", maxValue);
+  const maxValueBigInt = BigInt(maxValue);
+  console.log("maxValueBigInt", maxValueBigInt);
   const { isSignedIn } = useIsSignedIn();
 
   // Modal state for action inputs
@@ -144,13 +147,26 @@ export const PaywallWidget = ({
     setError(null);
 
     try {
-      // Make the x402 payment request using fetchWithPayment
-      const response = await fetchWithPayment(resource.resource, {
-        method: resource.accepts?.[0]?.outputSchema?.input?.method ?? "GET",
+      // If we have a payment response from a previous step, include it in the headers
+      const headers: Record<string, string> = {};
+      if (
+        paymentResponse &&
+        typeof paymentResponse === "object" &&
+        "token" in paymentResponse
+      ) {
+        // Assuming the payment response contains a token or similar proof
+        // Adjust this based on your actual payment response structure
+        // headers["X-Payment"] = (paymentResponse as any).token;
+      }
+
+      const proxyUrl = `/api/proxy?url=${encodeURIComponent(resource.resource)}`;
+      const response = await fetchWithPayment(proxyUrl, {
+        method: "GET",
       });
 
       if (response.ok) {
         const data = await response.json();
+        console.log("repsonse data", data);
         setPaymentResponse(data);
 
         // Notify OpenAI that payment was successful
