@@ -65,6 +65,7 @@ export default function SponsorActionsPage() {
     coverageType: "full" as "full" | "percent",
     coveragePercent: 100,
     recurrence: "one_time_per_user" as "one_time_per_user" | "per_request",
+    maxPrice: "",
     config: {} as Record<string, any>,
   });
 
@@ -140,6 +141,10 @@ export default function SponsorActionsPage() {
     e.preventDefault();
     if (!evmAddress) return;
     try {
+      const maxPriceInSmallestUnits = BigInt(
+        Math.floor(parseFloat(formData.maxPrice) * 1_000_000),
+      );
+
       const res = await fetch("/api/payload/sponsors/actions", {
         method: "POST",
         headers: {
@@ -152,8 +157,8 @@ export default function SponsorActionsPage() {
             formData.coverageType === "percent"
               ? formData.coveragePercent
               : undefined,
+          maxRedemptionPrice: maxPriceInSmallestUnits.toString(),
           config: formData.config,
-          max_redemption_price: "1000000", // 1 USDC default
         }),
       });
 
@@ -165,6 +170,7 @@ export default function SponsorActionsPage() {
           coverageType: "full",
           coveragePercent: 100,
           recurrence: "one_time_per_user",
+          maxPrice: "",
           config: {},
         });
         loadActions();
@@ -208,7 +214,7 @@ export default function SponsorActionsPage() {
   const renderPluginConfigFields = () => {
     if (!selectedPlugin) return null;
 
-    const { id: pluginId, schema } = selectedPlugin;
+    const { id: pluginId } = selectedPlugin;
 
     // Survey plugin
     if (pluginId === "survey") {
@@ -328,7 +334,7 @@ export default function SponsorActionsPage() {
               max="12"
               value={formData.config.length || 6}
               onChange={(e) =>
-                updateConfigField("length", parseInt(e.target.value) || 6)
+                updateConfigField("length", parseInt(e.target.value, 10) || 6)
               }
             />
           </div>
@@ -357,6 +363,19 @@ export default function SponsorActionsPage() {
     );
   };
 
+  const balanceUSD = (BigInt(balance) / BigInt(1_000_000)).toString();
+  const hasBalance = BigInt(balance) > 0n;
+
+  const getPluginName = (pluginId: string) => {
+    const names: Record<string, string> = {
+      survey: "Survey",
+      "email-capture": "Email Capture",
+      "github-star": "GitHub Star",
+      "code-verification": "Code Verification",
+    };
+    return names[pluginId] || pluginId;
+  };
+
   if (!isSignedIn || !evmAddress) {
     return (
       <div className="container mx-auto px-4 py-8">
@@ -370,14 +389,11 @@ export default function SponsorActionsPage() {
     );
   }
 
-  const balanceUSD = (BigInt(balance) / BigInt(1_000_000)).toString();
-  const hasBalance = BigInt(balance) > 0n;
-
   return (
     <div className="container mx-auto px-4 py-8">
       <div className="flex justify-between items-start mb-8">
         <div>
-          <h1 className="text-3xl font-bold">Actions</h1>
+          <h1 className="text-3xl font-bold">Campaigns</h1>
           <div className="mt-2">
             <p className="text-sm text-slate-600 dark:text-slate-400">
               Wallet Address:
@@ -398,7 +414,7 @@ export default function SponsorActionsPage() {
             <p className="text-lg font-semibold">${balanceUSD} USDC</p>
           </div>
           <Button onClick={() => setShowForm(!showForm)} disabled={!hasBalance}>
-            {showForm ? "Cancel" : "Create Action"}
+            {showForm ? "Cancel" : "Create Campaign"}
           </Button>
         </div>
       </div>
@@ -504,7 +520,7 @@ export default function SponsorActionsPage() {
                     onChange={(e) =>
                       setFormData({
                         ...formData,
-                        coveragePercent: parseInt(e.target.value) || 0,
+                        coveragePercent: parseInt(e.target.value, 10) || 0,
                       })
                     }
                   />
@@ -531,6 +547,24 @@ export default function SponsorActionsPage() {
                 </Select>
               </div>
 
+              <div>
+                <Label>Max Price Per User (USDC)</Label>
+                <Input
+                  type="number"
+                  step="0.01"
+                  min="0.01"
+                  value={formData.maxPrice}
+                  onChange={(e) =>
+                    setFormData({ ...formData, maxPrice: e.target.value })
+                  }
+                  placeholder="1.00"
+                  required
+                />
+                <p className="text-xs text-muted-foreground mt-1">
+                  Maximum amount you'll pay per user redemption
+                </p>
+              </div>
+
               <Button type="submit">Create Action</Button>
             </form>
           </CardContent>
@@ -539,115 +573,68 @@ export default function SponsorActionsPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Your Actions</CardTitle>
+          <CardTitle>Your Campaigns</CardTitle>
         </CardHeader>
         <CardContent>
           {actions.length === 0 ? (
-            <p className="text-slate-600 dark:text-slate-400 text-center py-8">
-              No actions created yet. Create your first action above.
-            </p>
-          ) : (
-            <div className="space-y-4">
-              {actions.map((action) => {
-                const maxPriceUSD = (
-                  BigInt(action.max_redemption_price) / BigInt(1_000_000)
-                ).toString();
-                const redemptionsCount = action.redemptions?.length || 0;
-                const completedRedemptions =
-                  action.redemptions?.filter((r) => r.status === "completed")
-                    .length || 0;
-                const createdDate = new Date(action.createdAt).toLocaleDateString();
-
-                return (
-                  <Card key={action.id} className={!action.active ? "opacity-60" : ""}>
-                    <CardHeader>
-                      <div className="flex justify-between items-start">
-                        <div>
-                          <CardTitle className="flex items-center gap-2">
-                            {action.pluginId}
-                            {!action.active && (
-                              <span className="text-xs font-normal text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 px-2 py-1 rounded">
-                                Disabled
-                              </span>
-                            )}
-                          </CardTitle>
-                          <p className="text-sm text-slate-600 dark:text-slate-400 mt-1">
-                            Created: {createdDate}
-                          </p>
-                        </div>
-                        <Button
-                          onClick={() => handleToggleAction(action.id, action.active)}
-                          variant={action.active ? "destructive" : "default"}
-                          size="sm"
-                        >
-                          {action.active ? "Disable" : "Enable"}
-                        </Button>
-                      </div>
-                    </CardHeader>
-                    <CardContent>
-                      <div className="grid md:grid-cols-2 gap-4">
-                        <div>
-                          <p className="text-sm font-semibold mb-2">Configuration</p>
-                          <div className="space-y-1 text-sm">
-                            <p>
-                              <span className="text-slate-600 dark:text-slate-400">
-                                Coverage:
-                              </span>{" "}
-                              {action.coverageType === "full"
-                                ? "100%"
-                                : `${action.coveragePercent}%`}
-                            </p>
-                            <p>
-                              <span className="text-slate-600 dark:text-slate-400">
-                                Recurrence:
-                              </span>{" "}
-                              {action.recurrence.replace(/_/g, " ")}
-                            </p>
-                            <p>
-                              <span className="text-slate-600 dark:text-slate-400">
-                                Max Price:
-                              </span>{" "}
-                              ${maxPriceUSD} USDC
-                            </p>
-                          </div>
-                        </div>
-                        <div>
-                          <p className="text-sm font-semibold mb-2">Statistics</p>
-                          <div className="space-y-1 text-sm">
-                            <p>
-                              <span className="text-slate-600 dark:text-slate-400">
-                                Total Redemptions:
-                              </span>{" "}
-                              {redemptionsCount}
-                            </p>
-                            <p>
-                              <span className="text-slate-600 dark:text-slate-400">
-                                Completed:
-                              </span>{" "}
-                              {completedRedemptions}
-                            </p>
-                            <p>
-                              <span className="text-slate-600 dark:text-slate-400">
-                                Pending:
-                              </span>{" "}
-                              {redemptionsCount - completedRedemptions}
-                            </p>
-                          </div>
-                        </div>
-                      </div>
-                      {Object.keys(action.config).length > 0 && (
-                        <div className="mt-4 pt-4 border-t">
-                          <p className="text-sm font-semibold mb-2">Plugin Config</p>
-                          <pre className="text-xs bg-slate-100 dark:bg-slate-800 p-2 rounded overflow-x-auto">
-                            {JSON.stringify(action.config, null, 2)}
-                          </pre>
-                        </div>
-                      )}
-                    </CardContent>
-                  </Card>
-                );
-              })}
+            <div className="text-center py-8">
+              <p className="text-muted-foreground">
+                No campaigns yet. Create your first campaign to start sponsoring
+                users.
+              </p>
             </div>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Campaign</TableHead>
+                  <TableHead>Max Price</TableHead>
+                  <TableHead>Coverage</TableHead>
+                  <TableHead>Recurrence</TableHead>
+                  <TableHead>Redemptions</TableHead>
+                  <TableHead>Spent</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {actions.map((action) => {
+                  const completedCount =
+                    action.redemptions?.filter((r) => r.status === "completed")
+                      .length || 0;
+                  const totalSpent =
+                    action.redemptions
+                      ?.filter((r) => r.status === "completed")
+                      .reduce(
+                        (sum, r) => sum + BigInt(r.sponsored_amount || "0"),
+                        0n,
+                      ) || 0n;
+                  const spentUSD = (Number(totalSpent) / 1_000_000).toFixed(2);
+                  const maxPriceUSD = (
+                    Number(BigInt(action.max_redemption_price || "0")) / 1_000_000
+                  ).toFixed(2);
+
+                  return (
+                    <TableRow key={action.id}>
+                      <TableCell className="font-medium">
+                        {getPluginName(action.pluginId)}
+                      </TableCell>
+                      <TableCell>${maxPriceUSD}</TableCell>
+                      <TableCell>
+                        {action.coverageType === "full"
+                          ? "100%"
+                          : `${action.coveragePercent}%`}
+                      </TableCell>
+                      <TableCell>
+                        {action.recurrence === "one_time_per_user"
+                          ? "One-time"
+                          : "Repeatable"}
+                      </TableCell>
+                      <TableCell>{completedCount}</TableCell>
+                      <TableCell>${spentUSD}</TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
           )}
         </CardContent>
       </Card>

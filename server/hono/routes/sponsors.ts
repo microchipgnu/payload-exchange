@@ -62,7 +62,8 @@ sponsorsRouter.post("/actions", async (c) => {
     coverageType: "full" | "percent";
     coveragePercent?: number;
     recurrence: "one_time_per_user" | "per_request";
-    max_redemption_price: string; // bigint as string
+    maxRedemptionPrice?: string;
+    max_redemption_price?: string; // bigint as string (legacy support)
   }>();
 
   let sponsor = await getSponsorByWallet(walletAddress);
@@ -83,6 +84,13 @@ sponsorsRouter.post("/actions", async (c) => {
     );
   }
 
+  // Support both camelCase and snake_case for backward compatibility
+  const maxRedemptionPrice =
+    body.maxRedemptionPrice || body.max_redemption_price;
+  if (!maxRedemptionPrice) {
+    return c.json({ error: "maxRedemptionPrice is required" }, 400);
+  }
+
   const actionId = await createAction({
     sponsorId: sponsor.id,
     pluginId: body.pluginId,
@@ -90,7 +98,7 @@ sponsorsRouter.post("/actions", async (c) => {
     coverageType: body.coverageType,
     coveragePercent: body.coveragePercent,
     recurrence: body.recurrence,
-    max_redemption_price: BigInt(body.max_redemption_price),
+    max_redemption_price: BigInt(maxRedemptionPrice),
   });
 
   return c.json({ id: actionId, success: true });
