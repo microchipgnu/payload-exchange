@@ -7,6 +7,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { Label, Pie, PieChart } from "recharts";
 import { encodeFunctionData, parseUnits } from "viem";
+import { base } from "viem/chains";
 import Navbar from "@/components/navbar";
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -1431,8 +1432,8 @@ export default function SponsorDashboard() {
                     </div>
                   </div>
                   <SendEvmTransactionButton
-                    account={evmAddress!}
-                    network="base-sepolia"
+                    account={evmAddress}
+                    network="base"
                     onError={handleTransactionError}
                     onSuccess={handleTransactionSuccess}
                     pendingLabel="Sending transaction..."
@@ -1458,7 +1459,7 @@ export default function SponsorDashboard() {
                           parseUnits(fundAmount, 6), // USDC has 6 decimals
                         ],
                       }),
-                      chainId: 84_532, // Base Sepolia chain ID
+                      chainId: base.id,
                       type: "eip1559",
                     }}
                   >

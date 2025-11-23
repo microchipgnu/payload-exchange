@@ -2,7 +2,7 @@ import "@/app/globals.css";
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { AppsSDKUIProvider } from "@/components/apps-sdk-ui-provider";
-import { CDPProvider } from "@/components/cdp-provider";
+import { CDPProviders } from "@/components/cdp-provider";
 import { APP_BASE_URL } from "@/lib/config";
 
 const geistSans = Geist({
@@ -34,6 +34,7 @@ export default function RootLayout({
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
         <style
+          // biome-ignore lint/security/noDangerouslySetInnerHtml: <just cause>
           dangerouslySetInnerHTML={{
             __html: `
               /* Force CDP modal to appear above everything */
@@ -52,6 +53,7 @@ export default function RootLayout({
           }}
         />
         <script
+          // biome-ignore lint/security/noDangerouslySetInnerHtml: <trust me bro>
           dangerouslySetInnerHTML={{
             __html: `
               (function() {
@@ -103,7 +105,7 @@ export default function RootLayout({
           }}
         />
         <AppsSDKUIProvider>
-          <CDPProvider>{children}</CDPProvider>
+          <CDPProviders>{children}</CDPProviders>
         </AppsSDKUIProvider>
       </body>
     </html>

@@ -6,6 +6,7 @@ import {
   useIsSignedIn,
 } from "@coinbase/cdp-hooks";
 import { SendEvmTransactionButton } from "@coinbase/cdp-react";
+import { base } from "viem/chains";
 
 export function SendTransaction() {
   const { evmAddress } = useEvmAddress();
@@ -21,12 +22,11 @@ export function SendTransaction() {
         Send Test Transaction
       </h3>
       <p className="text-slate-600 text-xs dark:text-slate-400">
-        Send a small test transaction to your own address on Base Sepolia
-        testnet
+        Send a small test transaction to your own address on Base
       </p>
       <SendEvmTransactionButton
         account={evmAddress}
-        network="base-sepolia"
+        network="base"
         onError={(error: APIError | Error) => {
           console.error("Transaction failed:", error);
           alert(`Transaction failed: ${error.message}`);
@@ -39,7 +39,7 @@ export function SendTransaction() {
         transaction={{
           to: evmAddress,
           value: 1000000000000n, // 0.000001 ETH
-          chainId: 84_532, // Base Sepolia chain ID
+          chainId: base.id,
           type: "eip1559",
         }}
       >

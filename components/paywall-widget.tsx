@@ -1,5 +1,6 @@
 "use client";
 
+import { useX402 } from "@coinbase/cdp-hooks";
 import { ChevronDown } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState } from "react";
@@ -25,14 +26,18 @@ interface PaywallWidgetProps {
   resource?: Resource | null;
 }
 
-export function PaywallWidget({
+export const PaywallWidget = ({
   resource: initialResource,
-}: PaywallWidgetProps = {}) {
+}: PaywallWidgetProps = {}) => {
   const [resource, setResource] = useState<Resource | null>(
     initialResource ?? null,
   );
   const [selectedNetwork, setSelectedNetwork] = useState("Base");
   const [isNetworkSelectOpen, setIsNetworkSelectOpen] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const [paymentResponse, setPaymentResponse] = useState<unknown>(null);
+  const [error, setError] = useState<string | null>(null);
+  const { fetchWithPayment } = useX402();
 
   useEffect(() => {
     // Only listen for OpenAI events if no resource was provided as a prop
@@ -65,16 +70,56 @@ export function PaywallWidget({
 
   const handleSignTransaction = async () => {
     console.log("Sign transaction clicked");
-    if (window.openai?.sendFollowUpMessage) {
-      await window.openai.sendFollowUpMessage({
-        prompt: "User initiated payment transaction",
+
+    if (!resource?.resource) {
+      setError("No resource URL available");
+      return;
+    }
+
+    setIsLoading(true);
+    setError(null);
+
+    try {
+      // Make the x402 payment request using fetchWithPayment
+      const response = await fetchWithPayment(resource.resource, {
+        method: resource.accepts?.[0]?.outputSchema?.input?.method ?? "GET",
       });
+
+      if (response.ok) {
+        const data = await response.json();
+        setPaymentResponse(data);
+        console.log("Payment successful:", data);
+
+        // Notify OpenAI that payment was successful
+        if (window.openai?.sendFollowUpMessage) {
+          await window.openai.sendFollowUpMessage({
+            prompt: `Payment successful for resource: ${resource.resource}`,
+          });
+        }
+      } else {
+        const errorText = await response.text();
+        throw new Error(`Payment failed: ${response.status} - ${errorText}`);
+      }
+    } catch (err) {
+      const errorMessage =
+        err instanceof Error ? err.message : "Payment failed";
+      console.error("Payment error:", err);
+      setError(errorMessage);
+
+      // Notify OpenAI about the error
+      if (window.openai?.sendFollowUpMessage) {
+        await window.openai.sendFollowUpMessage({
+          prompt: `Payment failed: ${errorMessage}`,
+        });
+      }
+    } finally {
+      setIsLoading(false);
     }
   };
 
   const handleGitHubStar = async () => {
     console.log("GitHub star clicked");
-    window.open("https://github.com/your-repo", "_blank");
+    window.open("https://github.com/microchipgnu/mcpay", "_blank");
     if (window.openai?.sendFollowUpMessage) {
       await window.openai.sendFollowUpMessage({
         prompt: "User starred the repository on GitHub",
@@ -84,7 +129,7 @@ export function PaywallWidget({
 
   const handleFollowX = async () => {
     console.log("Follow on X clicked");
-    window.open("https://x.com/your-handle", "_blank");
+    window.open("https://x.com/x420yo", "_blank");
     if (window.openai?.sendFollowUpMessage) {
       await window.openai.sendFollowUpMessage({
         prompt: "User followed on X",
@@ -233,9 +278,22 @@ export function PaywallWidget({
                 variant="customSecondary"
                 className="w-full"
                 onClick={handleSignTransaction}
+                disabled={isLoading || !resource?.resource}
               >
-                Sign Transaction
+                {isLoading ? "Processing Payment..." : "Sign Transaction"}
               </Button>
+
+              {error && (
+                <div className="text-red-400 text-sm text-center p-2 bg-red-900/20 rounded">
+                  {error}
+                </div>
+              )}
+
+              {paymentResponse !== null ? (
+                <div className="text-emerald-400 text-sm text-center p-2 bg-emerald-900/20 rounded">
+                  Payment successful!
+                </div>
+              ) : null}
             </div>
 
             {/* Separator */}
@@ -321,4 +379,4 @@ export function PaywallWidget({
       </div>
     </TooltipProvider>
   );
-}
+};

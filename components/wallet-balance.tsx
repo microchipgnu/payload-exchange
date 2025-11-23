@@ -6,7 +6,8 @@ import {
   useSolanaAddress,
 } from "@coinbase/cdp-hooks";
 import { useEffect, useState } from "react";
-import { formatEther, formatUnits } from "viem";
+import { createPublicClient, formatEther, formatUnits, http } from "viem";
+import { base } from "viem/chains";
 
 interface Balance {
   value: bigint;
@@ -49,29 +50,18 @@ export function WalletBalance() {
     const fetchEvmBalance = async () => {
       setEvmBalance((prev) => ({ ...prev, isLoading: true, error: null }));
       try {
-        // Use Base Sepolia public RPC
-        const response = await fetch("https://sepolia.base.org", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            jsonrpc: "2.0",
-            method: "eth_getBalance",
-            params: [evmAddress, "latest"],
-            id: 1,
-          }),
+        const publicClient = createPublicClient({
+          transport: http(),
+          chain: base,
         });
 
-        const data = await response.json();
-        if (data.error) {
-          throw new Error(data.error.message || "Failed to fetch balance");
-        }
-
-        const balance = BigInt(data.result);
+        const rawBalance = await publicClient.getBalance({
+          address: evmAddress,
+        });
+        const balanceFormatter = formatEther(rawBalance);
         setEvmBalance({
-          value: balance,
-          formatted: formatEther(balance),
+          value: rawBalance,
+          formatted: balanceFormatter,
           isLoading: false,
           error: null,
         });
@@ -166,7 +156,7 @@ export function WalletBalance() {
             <div className="flex items-center gap-2">
               <div className="h-2 w-2 rounded-full bg-blue-500" />
               <span className="text-slate-600 text-xs dark:text-slate-400">
-                Base Sepolia ETH:
+                Base ETH:
               </span>
             </div>
             <div className="text-right">

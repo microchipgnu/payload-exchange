@@ -9,6 +9,7 @@ import {
 import { SendEvmTransactionButton } from "@coinbase/cdp-react";
 import { useCallback, useEffect, useState } from "react";
 import { encodeFunctionData, parseUnits } from "viem";
+import { base } from "viem/chains";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -223,8 +224,8 @@ export default function SponsorBillingPage() {
                 </div>
               </div>
               <SendEvmTransactionButton
-                account={evmAddress!}
-                network="base-sepolia"
+                account={evmAddress}
+                network="base"
                 onError={handleTransactionError}
                 onSuccess={handleTransactionSuccess}
                 pendingLabel="Sending transaction..."
@@ -250,7 +251,7 @@ export default function SponsorBillingPage() {
                       parseUnits(fundAmount, 6), // USDC has 6 decimals
                     ],
                   }),
-                  chainId: 84_532, // Base Sepolia chain ID
+                  chainId: base.id,
                   type: "eip1559",
                 }}
               >
