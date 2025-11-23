@@ -9,6 +9,21 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ChartContainer } from "@/components/ui/chart";
 import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label as FormLabel } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
   Table,
   TableBody,
   TableCell,
@@ -16,6 +31,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { Textarea } from "@/components/ui/textarea";
 
 interface Analytics {
   balance: string;
@@ -36,10 +52,28 @@ interface Action {
   }>;
 }
 
+interface Plugin {
+  id: string;
+  name: string;
+  description?: string;
+  schema?: any;
+}
+
 export default function SponsorDashboard() {
   const [analytics, setAnalytics] = useState<Analytics | null>(null);
   const [recentActions, setRecentActions] = useState<Action[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [plugins, setPlugins] = useState<Plugin[]>([]);
+  const [selectedPlugin, setSelectedPlugin] = useState<Plugin | null>(null);
+  const [formData, setFormData] = useState({
+    pluginId: "",
+    coverageType: "full" as "full" | "percent",
+    coveragePercent: 100,
+    recurrence: "one_time_per_user" as "one_time_per_user" | "per_request",
+    maxPrice: "",
+    config: {} as Record<string, any>,
+  });
 
   const loadData = useCallback(async () => {
     setIsLoading(true);
@@ -68,9 +102,20 @@ export default function SponsorDashboard() {
     }
   }, []);
 
+  const loadPlugins = useCallback(async () => {
+    try {
+      const res = await fetch("/api/payload/sponsors/plugins");
+      const data = await res.json();
+      setPlugins(data.plugins || []);
+    } catch (error) {
+      console.error("Failed to load plugins:", error);
+    }
+  }, []);
+
   useEffect(() => {
     loadData();
-  }, [loadData]);
+    loadPlugins();
+  }, [loadData, loadPlugins]);
 
   if (isLoading || !analytics) {
     return (
@@ -95,6 +140,58 @@ export default function SponsorDashboard() {
     return names[pluginId] || pluginId;
   };
 
+  const handlePluginChange = (pluginId: string) => {
+    const plugin = plugins.find((p) => p.id === pluginId);
+    setSelectedPlugin(plugin || null);
+    setFormData({
+      ...formData,
+      pluginId,
+      config: {},
+    });
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      const maxPriceInSmallestUnits = BigInt(
+        Math.floor(parseFloat(formData.maxPrice) * 1_000_000),
+      );
+
+      const res = await fetch("/api/payload/sponsors/actions", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-wallet-address": "0x0000000000000000000000000000000000000000",
+        },
+        body: JSON.stringify({
+          ...formData,
+          coveragePercent:
+            formData.coverageType === "percent"
+              ? formData.coveragePercent
+              : undefined,
+          maxRedemptionPrice: maxPriceInSmallestUnits.toString(),
+          config: formData.config,
+        }),
+      });
+
+      if (res.ok) {
+        setShowCreateModal(false);
+        setSelectedPlugin(null);
+        setFormData({
+          pluginId: "",
+          coverageType: "full",
+          coveragePercent: 100,
+          recurrence: "one_time_per_user",
+          maxPrice: "",
+          config: {},
+        });
+        loadData();
+      }
+    } catch (error) {
+      console.error("Failed to create action:", error);
+    }
+  };
+
   return (
     <div className="container mx-auto px-4 py-8">
       <div className="flex justify-between items-center mb-8">
@@ -103,9 +200,9 @@ export default function SponsorDashboard() {
           <Link href="/sponsor/billing">
             <Button variant="outline">Add Funds</Button>
           </Link>
-          <Link href="/sponsor/actions">
-            <Button>Create Campaign</Button>
-          </Link>
+          <Button onClick={() => setShowCreateModal(true)}>
+            Create Campaign
+          </Button>
         </div>
       </div>
 
@@ -378,6 +475,227 @@ export default function SponsorDashboard() {
           )}
         </CardContent>
       </Card>
+
+      {/* Create Campaign Modal */}
+      <Dialog open={showCreateModal} onOpenChange={setShowCreateModal}>
+        <DialogContent className="max-w-3xl max-h-[85vh] overflow-hidden flex flex-col p-0">
+          <DialogHeader className="px-6 pt-6 pb-4">
+            <DialogTitle className="text-2xl">Create New Sponsor Campaign</DialogTitle>
+          </DialogHeader>
+
+          <form
+            onSubmit={handleSubmit}
+            className="flex flex-col flex-1 overflow-hidden"
+          >
+            <div className="flex-1 overflow-y-auto px-6 py-6 space-y-8">
+              {/* Section 1: Action Type */}
+              <div className="space-y-4">
+                <div>
+                  <h3 className="text-base font-semibold mb-1">
+                    What action do you want users to take?
+                  </h3>
+                </div>
+                <div>
+                  <FormLabel className="text-sm font-medium">
+                    Action Type
+                  </FormLabel>
+                  <Select
+                    value={formData.pluginId}
+                    onValueChange={handlePluginChange}
+                  >
+                    <SelectTrigger className="mt-1.5">
+                      <SelectValue placeholder="Select an action type" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {plugins.map((plugin) => (
+                        <SelectItem key={plugin.id} value={plugin.id}>
+                          {plugin.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {selectedPlugin?.description && (
+                    <p className="text-sm text-muted-foreground mt-2 pl-1">
+                      {selectedPlugin.description}
+                    </p>
+                  )}
+                </div>
+              </div>
+
+              {/* Section 2: Plugin Configuration */}
+              {selectedPlugin && (
+                <div className="space-y-4 pt-6 border-t">
+                  <div>
+                    <h3 className="text-base font-semibold mb-1">
+                      Configure Action Details
+                    </h3>
+                    <p className="text-sm text-muted-foreground">
+                      Customize how this action works
+                    </p>
+                  </div>
+                  <div>
+                    <FormLabel className="text-sm font-medium">
+                      Configuration (JSON)
+                    </FormLabel>
+                    <Textarea
+                      value={JSON.stringify(formData.config, null, 2)}
+                      onChange={(e) => {
+                        try {
+                          const parsed = JSON.parse(e.target.value);
+                          setFormData({ ...formData, config: parsed });
+                        } catch {
+                          // Invalid JSON, allow typing
+                        }
+                      }}
+                      placeholder='{"key": "value"}'
+                      className="font-mono text-sm mt-1.5 min-h-[120px]"
+                    />
+                    <p className="text-xs text-muted-foreground mt-2 pl-1">
+                      Plugin-specific settings in JSON format
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {/* Section 3: Sponsorship Settings */}
+              <div className="space-y-4 pt-6 border-t">
+                <div>
+                  <h3 className="text-base font-semibold mb-1">
+                    Sponsorship Settings
+                  </h3>
+                  <p className="text-sm text-muted-foreground">
+                    Define how much you'll pay and how often
+                  </p>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  {/* Max Price */}
+                  <div className="col-span-2">
+                    <FormLabel className="text-sm font-medium">
+                      Max Sponsored Amount (USDC) per one redemption
+                    </FormLabel>
+                    <div className="flex items-center gap-2 mt-1.5">
+                      <Input
+                        type="number"
+                        step="0.01"
+                        min="0.01"
+                        value={formData.maxPrice}
+                        onChange={(e) =>
+                          setFormData({ ...formData, maxPrice: e.target.value })
+                        }
+                        placeholder="1.00"
+                        required
+                        className="flex-1"
+                      />
+                      <span className="text-sm text-muted-foreground whitespace-nowrap">
+                        USDC
+                      </span>
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-2 pl-1">
+                      Maximum you'll pay per user who completes this action
+                    </p>
+                  </div>
+
+                  {/* Coverage Type */}
+                  <div>
+                    <FormLabel className="text-sm font-medium">
+                      Coverage Type
+                    </FormLabel>
+                    <Select
+                      value={formData.coverageType}
+                      onValueChange={(value: "full" | "percent") =>
+                        setFormData({ ...formData, coverageType: value })
+                      }
+                    >
+                      <SelectTrigger className="mt-1.5">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="full">Full Coverage</SelectItem>
+                        <SelectItem value="percent">
+                          Percentage Coverage
+                        </SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  {/* Coverage Percent (conditional) */}
+                  {formData.coverageType === "percent" && (
+                    <div>
+                      <FormLabel className="text-sm font-medium">
+                        Coverage Percent
+                      </FormLabel>
+                      <div className="flex items-center gap-2 mt-1.5">
+                        <Input
+                          type="number"
+                          min="0"
+                          max="100"
+                          value={formData.coveragePercent}
+                          onChange={(e) =>
+                            setFormData({
+                              ...formData,
+                              coveragePercent:
+                                parseInt(e.target.value, 10) || 0,
+                            })
+                          }
+                          className="flex-1"
+                        />
+                        <span className="text-sm text-muted-foreground">%</span>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Recurrence */}
+                  <div
+                    className={
+                      formData.coverageType === "percent" ? "" : "col-span-2"
+                    }
+                  >
+                    <FormLabel className="text-sm font-medium">
+                      Recurrence
+                    </FormLabel>
+                    <Select
+                      value={formData.recurrence}
+                      onValueChange={(
+                        value: "one_time_per_user" | "per_request",
+                      ) => setFormData({ ...formData, recurrence: value })}
+                    >
+                      <SelectTrigger className="mt-1.5">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="one_time_per_user">
+                          One Time Per User
+                        </SelectItem>
+                        <SelectItem value="per_request">Per Request</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <p className="text-xs text-muted-foreground mt-2 pl-1">
+                      {formData.recurrence === "one_time_per_user"
+                        ? "Each user can only redeem once"
+                        : "Users can redeem multiple times"}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Footer Actions */}
+            <div className="px-6 py-4 border-t bg-muted/30 flex gap-3 justify-end">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setShowCreateModal(false)}
+              >
+                Cancel
+              </Button>
+              <Button type="submit" size="default">
+                Create Campaign
+              </Button>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

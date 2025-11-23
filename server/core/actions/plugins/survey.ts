@@ -13,7 +13,7 @@ export const surveyPlugin: ActionPlugin<SurveyConfig> = {
   describe(config) {
     return {
       humanInstructions:
-        config?.question || "Please answer the survey question.",
+        "Users will answer the survey question you configure. You can ask text or multiple-choice questions.",
       schema: {
         type: "object",
         properties: {

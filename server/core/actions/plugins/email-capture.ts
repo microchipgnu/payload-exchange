@@ -11,7 +11,8 @@ export const emailCapturePlugin: ActionPlugin<EmailCaptureConfig> = {
 
   describe(config) {
     return {
-      humanInstructions: `Enter your email address to access this resource.`,
+      humanInstructions:
+        "Users will enter their email address. Great for building your mailing list.",
       schema: {
         type: "object",
         properties: {

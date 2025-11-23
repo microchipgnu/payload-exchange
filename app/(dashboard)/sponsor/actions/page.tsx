@@ -345,7 +345,7 @@ export default function SponsorActionsPage() {
               <p className="text-3xl font-bold">${balanceUSD} USDC</p>
             </div>
             <p className="text-sm text-muted-foreground">
-              This balance is used to sponsor user transactions
+              This balance is used to sponsor x402 resources
             </p>
           </div>
         </CardContent>
@@ -448,7 +448,7 @@ export default function SponsorActionsPage() {
               </div>
 
               <div>
-                <Label>Max Price Per User (USDC)</Label>
+                <Label>Max Sponsored Amount (USDC) per one redemption</Label>
                 <Input
                   type="number"
                   step="0.01"

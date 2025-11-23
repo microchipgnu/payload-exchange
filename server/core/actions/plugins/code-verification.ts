@@ -11,7 +11,8 @@ export const codeVerificationPlugin: ActionPlugin<CodeVerificationConfig> = {
 
   describe(config) {
     return {
-      humanInstructions: "Enter the verification code to access this resource.",
+      humanInstructions:
+        "Users will enter a verification code that you set. Useful for gated content or events.",
       schema: {
         type: "object",
         properties: {

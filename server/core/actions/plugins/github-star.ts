@@ -10,7 +10,7 @@ export const githubStarPlugin: ActionPlugin<GitHubStarConfig> = {
 
   describe(config) {
     return {
-      humanInstructions: `Star the GitHub repository ${config?.repository || "specified"} to access this resource.`,
+      humanInstructions: `Users will star your GitHub repository${config?.repository ? ` (${config.repository})` : ""}.`,
       schema: {
         type: "object",
         properties: {
