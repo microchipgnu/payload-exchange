@@ -31,7 +31,6 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Textarea } from "@/components/ui/textarea";
 
 interface Analytics {
   balance: string;
@@ -64,6 +63,8 @@ export default function SponsorDashboard() {
   const [recentActions, setRecentActions] = useState<Action[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [showFundModal, setShowFundModal] = useState(false);
+  const [fundAmount, setFundAmount] = useState("");
   const [plugins, setPlugins] = useState<Plugin[]>([]);
   const [selectedPlugin, setSelectedPlugin] = useState<Plugin | null>(null);
   const [formData, setFormData] = useState({
@@ -150,6 +151,163 @@ export default function SponsorDashboard() {
     });
   };
 
+  const updateConfigField = (key: string, value: any) => {
+    setFormData({
+      ...formData,
+      config: {
+        ...formData.config,
+        [key]: value,
+      },
+    });
+  };
+
+  const renderPluginConfigFields = () => {
+    if (!selectedPlugin) return null;
+
+    const { id: pluginId } = selectedPlugin;
+
+    // Survey plugin
+    if (pluginId === "survey") {
+      return (
+        <>
+          <div>
+            <FormLabel className="text-sm font-medium">Question *</FormLabel>
+            <Input
+              value={formData.config.question || ""}
+              onChange={(e) => updateConfigField("question", e.target.value)}
+              placeholder="What is your favorite color?"
+              required
+              className="mt-1.5"
+            />
+          </div>
+          <div>
+            <FormLabel className="text-sm font-medium">Type</FormLabel>
+            <Select
+              value={formData.config.type || "text"}
+              onValueChange={(value) => updateConfigField("type", value)}
+            >
+              <SelectTrigger className="mt-1.5">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="text">Text</SelectItem>
+                <SelectItem value="multiple-choice">Multiple Choice</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          {formData.config.type === "multiple-choice" && (
+            <div>
+              <FormLabel className="text-sm font-medium">
+                Options (comma-separated) *
+              </FormLabel>
+              <Input
+                value={
+                  Array.isArray(formData.config.options)
+                    ? formData.config.options.join(", ")
+                    : formData.config.options || ""
+                }
+                onChange={(e) => {
+                  const options = e.target.value
+                    .split(",")
+                    .map((opt) => opt.trim())
+                    .filter((opt) => opt.length > 0);
+                  updateConfigField("options", options);
+                }}
+                placeholder="Option 1, Option 2, Option 3"
+                required
+                className="mt-1.5"
+              />
+            </div>
+          )}
+        </>
+      );
+    }
+
+    // Email Capture plugin
+    if (pluginId === "email-capture") {
+      return (
+        <>
+          <div>
+            <FormLabel className="text-sm font-medium">Placeholder</FormLabel>
+            <Input
+              value={formData.config.placeholder || ""}
+              onChange={(e) => updateConfigField("placeholder", e.target.value)}
+              placeholder="your@email.com"
+              className="mt-1.5"
+            />
+          </div>
+          <div>
+            <FormLabel className="text-sm font-medium">Button Text</FormLabel>
+            <Input
+              value={formData.config.buttonText || ""}
+              onChange={(e) => updateConfigField("buttonText", e.target.value)}
+              placeholder="Submit"
+              className="mt-1.5"
+            />
+          </div>
+        </>
+      );
+    }
+
+    // GitHub Star plugin
+    if (pluginId === "github-star") {
+      return (
+        <div>
+          <FormLabel className="text-sm font-medium">
+            Repository (owner/repo) *
+          </FormLabel>
+          <Input
+            value={formData.config.repository || ""}
+            onChange={(e) => updateConfigField("repository", e.target.value)}
+            placeholder="owner/repository"
+            required
+            className="mt-1.5"
+          />
+          <p className="text-xs text-muted-foreground mt-2 pl-1">
+            Example: facebook/react
+          </p>
+        </div>
+      );
+    }
+
+    // Code Verification plugin
+    if (pluginId === "code-verification") {
+      return (
+        <>
+          <div>
+            <FormLabel className="text-sm font-medium">
+              Verification Code
+            </FormLabel>
+            <Input
+              value={formData.config.code || ""}
+              onChange={(e) => updateConfigField("code", e.target.value)}
+              placeholder="Leave empty to auto-generate"
+              className="mt-1.5"
+            />
+            <p className="text-xs text-muted-foreground mt-2 pl-1">
+              If left empty, a random code will be generated
+            </p>
+          </div>
+          <div>
+            <FormLabel className="text-sm font-medium">Code Length</FormLabel>
+            <Input
+              type="number"
+              min="4"
+              max="12"
+              value={formData.config.length || 6}
+              onChange={(e) =>
+                updateConfigField("length", parseInt(e.target.value, 10) || 6)
+              }
+              className="mt-1.5"
+            />
+          </div>
+        </>
+      );
+    }
+
+    return null;
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
@@ -192,14 +350,41 @@ export default function SponsorDashboard() {
     }
   };
 
+  const handleFund = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      const amount = BigInt(parseFloat(fundAmount) * 1_000_000);
+      const res = await fetch("/api/payload/sponsors/fund", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-wallet-address": "0x0000000000000000000000000000000000000000",
+        },
+        body: JSON.stringify({
+          amount: amount.toString(),
+          currency: "USDC:base",
+          network: "base",
+        }),
+      });
+
+      if (res.ok) {
+        setFundAmount("");
+        setShowFundModal(false);
+        loadData();
+      }
+    } catch (error) {
+      console.error("Failed to fund:", error);
+    }
+  };
+
   return (
     <div className="container mx-auto px-4 py-8">
       <div className="flex justify-between items-center mb-8">
         <h1 className="text-3xl font-bold">Dashboard</h1>
         <div className="flex gap-2">
-          <Link href="/sponsor/billing">
-            <Button variant="outline">Add Funds</Button>
-          </Link>
+          <Button variant="outline" onClick={() => setShowFundModal(true)}>
+            Add Funds
+          </Button>
           <Button onClick={() => setShowCreateModal(true)}>
             Create Campaign
           </Button>
@@ -480,7 +665,9 @@ export default function SponsorDashboard() {
       <Dialog open={showCreateModal} onOpenChange={setShowCreateModal}>
         <DialogContent className="max-w-3xl max-h-[85vh] overflow-hidden flex flex-col p-0">
           <DialogHeader className="px-6 pt-6 pb-4">
-            <DialogTitle className="text-2xl">Create New Sponsor Campaign</DialogTitle>
+            <DialogTitle className="text-2xl">
+              Create New Sponsor Campaign
+            </DialogTitle>
           </DialogHeader>
 
           <form
@@ -533,27 +720,7 @@ export default function SponsorDashboard() {
                       Customize how this action works
                     </p>
                   </div>
-                  <div>
-                    <FormLabel className="text-sm font-medium">
-                      Configuration (JSON)
-                    </FormLabel>
-                    <Textarea
-                      value={JSON.stringify(formData.config, null, 2)}
-                      onChange={(e) => {
-                        try {
-                          const parsed = JSON.parse(e.target.value);
-                          setFormData({ ...formData, config: parsed });
-                        } catch {
-                          // Invalid JSON, allow typing
-                        }
-                      }}
-                      placeholder='{"key": "value"}'
-                      className="font-mono text-sm mt-1.5 min-h-[120px]"
-                    />
-                    <p className="text-xs text-muted-foreground mt-2 pl-1">
-                      Plugin-specific settings in JSON format
-                    </p>
-                  </div>
+                  <div className="space-y-4">{renderPluginConfigFields()}</div>
                 </div>
               )}
 
@@ -694,6 +861,100 @@ export default function SponsorDashboard() {
               </Button>
             </div>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Add Funds Modal */}
+      <Dialog open={showFundModal} onOpenChange={setShowFundModal}>
+        <DialogContent className="max-w-md p-0">
+          <DialogHeader className="px-6 pt-6 pb-4 border-b">
+            <DialogTitle className="text-2xl">Add Funds</DialogTitle>
+            <p className="text-sm text-muted-foreground mt-1">
+              Deposit USDC to sponsor user's x401 payments
+            </p>
+          </DialogHeader>
+
+          <div className="px-6 py-6">
+            {/* Current Balance */}
+            <div className="mb-6 p-4 bg-muted/50 rounded-lg">
+              <p className="text-sm text-muted-foreground mb-1">
+                Current Balance
+              </p>
+              <p className="text-3xl font-bold">${balanceUSD}</p>
+              <p className="text-xs text-muted-foreground mt-1">USDC</p>
+            </div>
+
+            {/* Fund Form */}
+            <form onSubmit={handleFund} className="space-y-6">
+              <div className="space-y-3">
+                <div>
+                  <h3 className="text-base font-semibold mb-1">
+                    How much would you like to add?
+                  </h3>
+                  <p className="text-sm text-muted-foreground">
+                    Enter the amount in USDC
+                  </p>
+                </div>
+
+                <div>
+                  <FormLabel className="text-sm font-medium">
+                    Amount (USDC)
+                  </FormLabel>
+                  <div className="flex items-center gap-2 mt-1.5">
+                    <Input
+                      type="number"
+                      step="0.01"
+                      min="0.01"
+                      value={fundAmount}
+                      onChange={(e) => setFundAmount(e.target.value)}
+                      placeholder="10.00"
+                      required
+                      className="flex-1"
+                    />
+                    <span className="text-sm text-muted-foreground whitespace-nowrap">
+                      USDC
+                    </span>
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-2 pl-1">
+                    Minimum: 0.01 USDC
+                  </p>
+                </div>
+
+                {/* Preview */}
+                {fundAmount && parseFloat(fundAmount) > 0 && (
+                  <div className="p-3 bg-blue-50 dark:bg-blue-950 rounded-lg">
+                    <div className="flex justify-between text-sm mb-1">
+                      <span className="text-muted-foreground">
+                        New balance:
+                      </span>
+                      <span className="font-semibold">
+                        $
+                        {(
+                          parseFloat(balanceUSD) + parseFloat(fundAmount)
+                        ).toFixed(2)}{" "}
+                        USDC
+                      </span>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Footer */}
+              <div className="flex gap-3 pt-4 border-t">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setShowFundModal(false)}
+                  className="flex-1"
+                >
+                  Cancel
+                </Button>
+                <Button type="submit" className="flex-1">
+                  Add Funds
+                </Button>
+              </div>
+            </form>
+          </div>
         </DialogContent>
       </Dialog>
     </div>
