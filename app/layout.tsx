@@ -1,6 +1,7 @@
 import "@/app/globals.css";
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
+import { AppsSDKUIProvider } from "@/components/apps-sdk-ui-provider";
 import { CDPProvider } from "@/components/cdp-provider";
 import { APP_BASE_URL } from "@/lib/config";
 
@@ -32,7 +33,9 @@ export default function RootLayout({
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
-        <CDPProvider>{children}</CDPProvider>
+        <AppsSDKUIProvider>
+          <CDPProvider>{children}</CDPProvider>
+        </AppsSDKUIProvider>
       </body>
     </html>
   );

@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import { actionsRouter } from "./routes/actions";
 import { proxyRouter } from "./routes/proxy";
+import { resourcesRouter } from "./routes/resources";
 import { sponsorsRouter } from "./routes/sponsors";
 
 export const app = new Hono().basePath("/api/payload");
@@ -16,3 +17,6 @@ app.route("/actions", actionsRouter);
 
 // /sponsors/* → funding / withdraw / stats
 app.route("/sponsors", sponsorsRouter);
+
+// /resources/* → list / search / find resources
+app.route("/resources", resourcesRouter);

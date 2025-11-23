@@ -1,6 +1,6 @@
 import { and, desc, eq } from "drizzle-orm";
 import { db } from "./client";
-import { actions, redemptions, sponsors, fundingTransactions } from "./schema";
+import { actions, fundingTransactions, redemptions, sponsors } from "./schema";
 
 export async function getActionForResourceAndUser(userId: string) {
   // Find any available action that:
@@ -181,7 +181,8 @@ export async function updateFundingTransactionStatus(
     .set({
       status,
       transactionHash: transactionHash ?? undefined,
-      completedAt: status === "completed" || status === "failed" ? new Date() : undefined,
+      completedAt:
+        status === "completed" || status === "failed" ? new Date() : undefined,
     })
     .where(eq(fundingTransactions.id, fundingTransactionId));
 }

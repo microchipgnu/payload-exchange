@@ -1,10 +1,6 @@
 "use client";
 
-import {
-  useEvmAddress,
-  useIsSignedIn,
-  useSignOut,
-} from "@coinbase/cdp-hooks";
+import { useEvmAddress, useIsSignedIn, useSignOut } from "@coinbase/cdp-hooks";
 import { useCallback, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";

@@ -1,10 +1,5 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import {
   type APIError,
   useEvmAddress,
@@ -12,8 +7,13 @@ import {
   useSignOut,
 } from "@coinbase/cdp-hooks";
 import { SendEvmTransactionButton } from "@coinbase/cdp-react";
-import { WalletAuth } from "@/components/wallet-auth";
+import { useCallback, useEffect, useState } from "react";
 import { encodeFunctionData, parseUnits } from "viem";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { WalletAuth } from "@/components/wallet-auth";
 import { USDC_CONTRACT_ADDRESS } from "@/lib/config";
 
 export default function SponsorBillingPage() {

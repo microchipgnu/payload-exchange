@@ -1,44 +1,41 @@
+import BASE_RESOURCES_JSON from "./base-resources.json";
 import type { Resource } from "./types";
 
+const TOP_RESOURCES = BASE_RESOURCES_JSON as Resource[];
 /**
  * List all available x402 resources
- * This is a stub implementation - replace with real resource discovery
  */
 export async function listResources(): Promise<Resource[]> {
-  // In a real implementation, this would:
-  // 1. Query a resource registry/database
-  // 2. Filter by availability, network, etc.
-  // 3. Return paginated results
-
-  // Stub: return empty array
-  // TODO: Replace with actual resource listing logic
-  return [];
+  return TOP_RESOURCES;
 }
 
 /**
- * Get a specific resource by ID or URL
+ * Get a specific resource by url
  */
-export async function getResource(idOrUrl: string): Promise<Resource | null> {
-  // In a real implementation, this would:
-  // 1. Look up resource by ID or URL
-  // 2. Fetch metadata
-  // 3. Return resource details
-
-  // Stub: return null
-  // TODO: Replace with actual resource lookup
-  return null;
+export async function getResource(
+  resourceUrl: string,
+): Promise<Resource | null> {
+  const found = TOP_RESOURCES.find((r) => r.resource === resourceUrl);
+  return found || null;
 }
 
 /**
  * Search resources by query
  */
 export async function searchResources(query: string): Promise<Resource[]> {
-  // In a real implementation, this would:
-  // 1. Search resource database/index
-  // 2. Filter by query terms
-  // 3. Return ranked results
+  const lowerQuery = query.toLowerCase();
+  const results = TOP_RESOURCES.filter((r) => {
+    const matchResource = r.resource.toLowerCase().includes(lowerQuery);
 
-  // Stub: return empty array
-  // TODO: Replace with actual search logic
-  return [];
+    // Check description in accepts array
+    const matchDescription = r.accepts.some(
+      (a) =>
+        a.description?.toLowerCase().includes(lowerQuery) ||
+        a.extra?.name?.toLowerCase().includes(lowerQuery),
+    );
+
+    return matchResource || matchDescription;
+  });
+
+  return results;
 }
