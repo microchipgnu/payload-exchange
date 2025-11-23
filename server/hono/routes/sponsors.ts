@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import { listPlugins } from "@/server/core/actions/registry";
+import { getPlugin, listPlugins } from "@/server/core/actions/registry";
 import { payX402 } from "@/server/core/x402/client";
 import {
   createAction,
@@ -195,9 +195,32 @@ sponsorsRouter.get("/analytics", async (c) => {
 sponsorsRouter.get("/plugins", async (c) => {
   const plugins = listPlugins();
   return c.json({
-    plugins: plugins.map((p) => ({
-      id: p.id,
-      name: p.name,
-    })),
+    plugins: plugins.map((p) => {
+      const description = p.describe();
+      return {
+        id: p.id,
+        name: p.name,
+        description: description.humanInstructions,
+        schema: description.schema,
+      };
+    }),
+  });
+});
+
+// GET /sponsors/plugins/:id
+sponsorsRouter.get("/plugins/:id", async (c) => {
+  const pluginId = c.req.param("id");
+  const plugin = getPlugin(pluginId);
+
+  if (!plugin) {
+    return c.json({ error: "Plugin not found" }, 404);
+  }
+
+  const description = plugin.describe();
+  return c.json({
+    id: plugin.id,
+    name: plugin.name,
+    description: description.humanInstructions,
+    schema: description.schema,
   });
 });
