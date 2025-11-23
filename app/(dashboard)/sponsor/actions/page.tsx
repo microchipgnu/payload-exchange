@@ -1,17 +1,17 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Button } from "@/lib/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/lib/ui/card";
-import { Input } from "@/lib/ui/input";
-import { Label } from "@/lib/ui/label";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "@/lib/ui/select";
+} from "@/components/ui/select";
 import {
   Table,
   TableBody,
@@ -19,8 +19,8 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-} from "@/lib/ui/table";
-import { Textarea } from "@/lib/ui/textarea";
+} from "@/components/ui/table";
+import { Textarea } from "@/components/ui/textarea";
 
 interface Action {
   id: string;

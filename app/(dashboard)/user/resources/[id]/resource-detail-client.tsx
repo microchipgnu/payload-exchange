@@ -1,10 +1,10 @@
 "use client";
 
 import { useState } from "react";
-import { Button } from "@/lib/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/lib/ui/card";
-import { Input } from "@/lib/ui/input";
-import { Label } from "@/lib/ui/label";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 
 interface ResourceDetailClientProps {
   resourceId: string;
@@ -147,4 +147,3 @@ export default function ResourceDetailClient({
     </>
   );
 }
-

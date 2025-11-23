@@ -1,25 +1,25 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Badge } from "@/lib/ui/badge";
-import { Button } from "@/lib/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/lib/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
-} from "@/lib/ui/dialog";
-import { Input } from "@/lib/ui/input";
-import { Label } from "@/lib/ui/label";
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "@/lib/ui/select";
-import { Slider } from "@/lib/ui/slider";
+} from "@/components/ui/select";
+import { Slider } from "@/components/ui/slider";
 import {
   Table,
   TableBody,
@@ -27,9 +27,9 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-} from "@/lib/ui/table";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/lib/ui/tabs";
-import { Textarea } from "@/lib/ui/textarea";
+} from "@/components/ui/table";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 
 interface Resource {

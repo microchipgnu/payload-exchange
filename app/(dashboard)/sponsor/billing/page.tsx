@@ -1,10 +1,10 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Button } from "@/lib/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/lib/ui/card";
-import { Input } from "@/lib/ui/input";
-import { Label } from "@/lib/ui/label";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 
 export default function SponsorBillingPage() {
   const [balance, setBalance] = useState<string>("0");

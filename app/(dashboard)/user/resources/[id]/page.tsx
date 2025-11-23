@@ -1,7 +1,7 @@
 import { readFile } from "fs/promises";
 import { notFound } from "next/navigation";
 import { join } from "path";
-import { Card, CardContent, CardHeader, CardTitle } from "@/lib/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import ResourceDetailClient from "./resource-detail-client";
 
 interface ResourceItem {

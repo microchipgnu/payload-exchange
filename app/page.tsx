@@ -1,16 +1,16 @@
 "use client";
 
+import { FundFaucet } from "@/components/fund-faucet";
+import { SendTransaction } from "@/components/send-transaction";
+import { WalletAuth } from "@/components/wallet-auth";
+import { WalletBalance } from "@/components/wallet-balance";
 import {
   useDisplayMode,
   useIsChatGptApp,
   useMaxHeight,
   useRequestDisplayMode,
   useWidgetProps,
-} from "@/lib/hooks";
-import { FundFaucet } from "@/lib/ui/fund-faucet";
-import { SendTransaction } from "@/lib/ui/send-transaction";
-import { WalletAuth } from "@/lib/ui/wallet-auth";
-import { WalletBalance } from "@/lib/ui/wallet-balance";
+} from "@/hooks";
 
 export default function Home() {
   const toolOutput = useWidgetProps<{
