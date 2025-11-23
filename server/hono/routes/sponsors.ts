@@ -32,7 +32,17 @@ sponsorsRouter.get("/actions", async (c) => {
   }
 
   const actions = await getSponsorActions(sponsor.id);
-  return c.json({ actions });
+  // Convert BigInt values to strings for JSON serialization
+  const serializedActions = actions.map((action) => ({
+    ...action,
+    max_redemption_price: action.max_redemption_price.toString(),
+    coveragePercent: action.coveragePercent?.toString(),
+    redemptions: action.redemptions?.map((redemption) => ({
+      ...redemption,
+      sponsored_amount: redemption.sponsored_amount.toString(),
+    })),
+  }));
+  return c.json({ actions: serializedActions });
 });
 
 // POST /sponsors/actions
