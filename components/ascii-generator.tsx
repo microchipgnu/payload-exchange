@@ -63,6 +63,7 @@ interface AsciiHeroProps {
   bgColor?: string
   className?: string
   intervalMs?: number
+  asciiStyle?: AsciiStyle
 }
 
 export default function AsciiHero({
@@ -70,27 +71,23 @@ export default function AsciiHero({
   bgColor = "transparent",
   className = "",
   intervalMs = 1000,
+  asciiStyle = "dots",
 }: AsciiHeroProps) {
   const [ascii, setAscii] = useState("")
   const [seed, setSeed] = useState(Date.now())
 
   // Fixed parameters
   const pattern = "cross" as const
-  const asciiStyle: AsciiStyle = "dots"
   const complexity = 15
 
-  const generateAscii = () => {
+  // Generate on mount and when seed or asciiStyle changes
+  useEffect(() => {
     const random = seededRandom(seed)
     const size = 15 + complexity
     const chars = ASCII_SETS[asciiStyle]
     const result = generateCross(size, chars, random, complexity)
     setAscii(result)
-  }
-
-  // Generate on mount and when seed changes
-  useEffect(() => {
-    generateAscii()
-  }, [seed])
+  }, [seed, asciiStyle])
 
   // Auto-generate every intervalMs
   useEffect(() => {
