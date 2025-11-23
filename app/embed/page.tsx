@@ -1,5 +1,6 @@
 "use client";
 
+import { useMemo, useCallback } from "react";
 import { FundFaucet } from "@/components/fund-faucet";
 import { SendTransaction } from "@/components/send-transaction";
 import { WalletAuth } from "@/components/wallet-auth";
@@ -22,21 +23,34 @@ export default function Home() {
   const requestDisplayMode = useRequestDisplayMode();
   const isChatGptApp = useIsChatGptApp();
 
-  const name = toolOutput?.result?.structuredContent?.name || toolOutput?.name;
+  const name = useMemo(
+    () =>
+      toolOutput?.result?.structuredContent?.name || toolOutput?.name,
+    [toolOutput],
+  );
+
+  const handleFullscreenClick = useCallback(() => {
+    requestDisplayMode("fullscreen");
+  }, [requestDisplayMode]);
+
+  const containerStyle = useMemo(
+    () => ({
+      maxHeight,
+      height: displayMode === "fullscreen" ? maxHeight : undefined,
+    }),
+    [maxHeight, displayMode],
+  );
 
   return (
     <div
       className="grid grid-rows-[20px_1fr_20px] items-center justify-items-center gap-16 p-8 pb-20 font-sans sm:p-20"
-      style={{
-        maxHeight,
-        height: displayMode === "fullscreen" ? maxHeight : undefined,
-      }}
+      style={containerStyle}
     >
       {displayMode !== "fullscreen" && (
         <button
           aria-label="Enter fullscreen"
           className="fixed top-4 right-4 z-50 cursor-pointer rounded-full bg-white p-2.5 text-slate-700 shadow-lg ring-1 ring-slate-900/10 transition-colors hover:bg-slate-50 dark:bg-slate-800 dark:text-slate-300 dark:ring-white/10 dark:hover:bg-slate-700"
-          onClick={() => requestDisplayMode("fullscreen")}
+          onClick={handleFullscreenClick}
         >
           <svg
             aria-hidden="true"

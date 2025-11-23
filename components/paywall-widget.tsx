@@ -3,7 +3,7 @@
 import { useIsSignedIn, useX402 } from "@coinbase/cdp-hooks";
 import { ChevronDown, RefreshCw } from "lucide-react";
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { formatUnits } from "viem";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -73,9 +73,15 @@ export const PaywallWidget = ({
   const [isRefreshingActions, setIsRefreshingActions] = useState(false);
   const [paymentResponse, setPaymentResponse] = useState<unknown>(null);
   const [error, setError] = useState<string | null>(null);
-  const { fetchWithPayment } = useX402({
-    maxValue: BigInt(resource?.accepts?.[0]?.maxAmountRequired || "0"),
-  });
+  // Memoize maxValue to prevent unnecessary re-initialization
+  const maxValue = useMemo(
+    () => BigInt(resource?.accepts?.[0]?.maxAmountRequired || "0"),
+    [resource?.accepts],
+  );
+  const { fetchWithPayment } = useX402({ maxValue });
+
+  // Memoize formatted amount
+  const formattedAmount = useMemo(() => formatUnits(maxValue, 6), [maxValue]);
   const { isSignedIn } = useIsSignedIn();
 
   // Modal state for action inputs
@@ -93,28 +99,10 @@ export const PaywallWidget = ({
   const [inputValue, setInputValue] = useState("");
   const [selectedOption, setSelectedOption] = useState("");
 
-  // Debug modal state changes
-  useEffect(() => {
-    console.log("🔔 Modal state changed:", {
-      open: modalOpen,
-      type: modalType,
-      data: modalData,
-    });
-  }, [modalOpen, modalType, modalData]);
-
   // Sync actions prop with state
   useEffect(() => {
     const actionsToSet = Array.isArray(initialActions) ? initialActions : [];
-    console.log("🎨 [PAYWALL WIDGET] Props changed:", {
-      received: initialActions?.length || 0,
-      setting: actionsToSet.length,
-    });
     setActions(actionsToSet);
-    console.log(
-      "✅ [PAYWALL WIDGET] State updated with",
-      actionsToSet.length,
-      "actions",
-    );
   }, [initialActions]);
 
   useEffect(() => {
@@ -146,9 +134,7 @@ export const PaywallWidget = ({
     };
   }, [initialResource]);
 
-  const handleSignTransaction = async () => {
-    console.log("Sign transaction clicked");
-
+  const handleSignTransaction = useCallback(async () => {
     if (!resource?.resource) {
       setError("No resource URL available");
       return;
@@ -166,7 +152,6 @@ export const PaywallWidget = ({
       if (response.ok) {
         const data = await response.json();
         setPaymentResponse(data);
-        console.log("Payment successful:", data);
 
         // Notify OpenAI that payment was successful
         if (window.openai?.sendFollowUpMessage) {
@@ -181,7 +166,6 @@ export const PaywallWidget = ({
     } catch (err) {
       const errorMessage =
         err instanceof Error ? err.message : "Payment failed";
-      console.error("Payment error:", err);
       setError(errorMessage);
 
       // Notify OpenAI about the error
@@ -193,141 +177,119 @@ export const PaywallWidget = ({
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [resource, fetchWithPayment]);
 
-  const handleActionClick = async (action: Action) => {
-    console.log("🖱️ Action clicked:", action);
-    console.log("🖱️ Action ID:", action.id);
-    console.log("🖱️ Plugin ID:", action.pluginId);
+  const handleActionClick = useCallback(
+    async (action: Action) => {
+      try {
+        // Get userId from OpenAI context if available
+        const userId =
+          (window.openai as { user?: { id?: string } })?.user?.id || undefined;
 
-    try {
-      // Get userId from OpenAI context if available
-      const userId =
-        (window.openai as { user?: { id?: string } })?.user?.id || undefined;
-      console.log("🖱️ User ID:", userId);
+        const requestBody = {
+          actionId: action.id,
+          userId,
+          resourceId: resource?.resource || "paywall",
+        };
 
-      const requestBody = {
-        actionId: action.id,
-        userId,
-        resourceId: resource?.resource || "paywall",
-      };
-      console.log("🖱️ Starting action with:", requestBody);
-
-      // Start the action
-      const startRes = await fetch("/api/payload/actions/start", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(requestBody),
-      });
-
-      console.log("🖱️ Start response status:", startRes.status);
-
-      if (!startRes.ok) {
-        const error = await startRes.json();
-        console.error("❌ Failed to start action:", error);
-        alert(`Failed to start action: ${error.error || "Unknown error"}`);
-        return;
-      }
-
-      const startData = await startRes.json();
-      console.log("✅ Action started:", startData);
-
-      // Handle action based on plugin type
-      switch (action.pluginId) {
-        case "github-star": {
-          // Open GitHub URL
-          const repo = action.config.repository as string;
-          const githubUrl = repo
-            ? `https://github.com/${repo}`
-            : startData.url || "";
-          if (githubUrl) {
-            window.open(githubUrl, "_blank");
-            // Show confirmation modal after a delay
-            setTimeout(() => {
-              setModalData({
-                instanceId: startData.instanceId,
-                message: "Have you starred the repository?",
-              });
-              setModalType("confirm");
-              setModalOpen(true);
-            }, 2000);
-          }
-          break;
-        }
-        case "survey": {
-          // Show survey modal
-          const question = action.config.question as string;
-          const type = action.config.type as string;
-          const options = action.config.options as string[];
-
-          console.log("📋 Setting up survey modal:", {
-            question,
-            type,
-            options,
-          });
-          setModalData({
-            instanceId: startData.instanceId,
-            question,
-            options: type === "multiple-choice" ? options : undefined,
-          });
-          setModalType("survey");
-          setInputValue("");
-          setSelectedOption("");
-          console.log("📋 Opening survey modal");
-          setModalOpen(true);
-          console.log("📋 Modal open state should be true now");
-          break;
-        }
-        case "email-capture": {
-          // Show email modal
-          const placeholder =
-            (action.config.placeholder as string) || "your@email.com";
-          console.log("📧 Setting up email modal:", { placeholder });
-          setModalData({
-            instanceId: startData.instanceId,
-            placeholder,
-          });
-          setModalType("email");
-          setInputValue("");
-          console.log("📧 Opening email modal");
-          setModalOpen(true);
-          console.log("📧 Modal open state should be true now");
-          break;
-        }
-        default: {
-          // Generic handling - open URL if provided
-          if (startData.url) {
-            window.open(startData.url, "_blank");
-          }
-          setModalData({
-            message: startData.instructions || "Action started",
-          });
-          setModalType("confirm");
-          setModalOpen(true);
-        }
-      }
-
-      // Notify OpenAI about the action
-      if (window.openai?.sendFollowUpMessage) {
-        await window.openai.sendFollowUpMessage({
-          prompt: `User initiated action: ${action.pluginId}`,
+        // Start the action
+        const startRes = await fetch("/api/payload/actions/start", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(requestBody),
         });
-      }
-    } catch (error) {
-      console.error("❌ Error handling action:", error);
-      if (error instanceof Error) {
-        console.error("❌ Error message:", error.message);
-        console.error("❌ Error stack:", error.stack);
-      }
-      alert(
-        `Failed to process action: ${error instanceof Error ? error.message : "Unknown error"}`,
-      );
-    }
-  };
 
-  const refreshActions = async () => {
+        if (!startRes.ok) {
+          const error = await startRes.json();
+          alert(`Failed to start action: ${error.error || "Unknown error"}`);
+          return;
+        }
+
+        const startData = await startRes.json();
+
+        // Handle action based on plugin type
+        switch (action.pluginId) {
+          case "github-star": {
+            // Open GitHub URL
+            const repo = action.config.repository as string;
+            const githubUrl = repo
+              ? `https://github.com/${repo}`
+              : startData.url || "";
+            if (githubUrl) {
+              window.open(githubUrl, "_blank");
+              // Show confirmation modal after a delay
+              setTimeout(() => {
+                setModalData({
+                  instanceId: startData.instanceId,
+                  message: "Have you starred the repository?",
+                });
+                setModalType("confirm");
+                setModalOpen(true);
+              }, 2000);
+            }
+            break;
+          }
+          case "survey": {
+            // Show survey modal
+            const question = action.config.question as string;
+            const type = action.config.type as string;
+            const options = action.config.options as string[];
+
+            setModalData({
+              instanceId: startData.instanceId,
+              question,
+              options: type === "multiple-choice" ? options : undefined,
+            });
+            setModalType("survey");
+            setInputValue("");
+            setSelectedOption("");
+            setModalOpen(true);
+            break;
+          }
+          case "email-capture": {
+            // Show email modal
+            const placeholder =
+              (action.config.placeholder as string) || "your@email.com";
+            setModalData({
+              instanceId: startData.instanceId,
+              placeholder,
+            });
+            setModalType("email");
+            setInputValue("");
+            setModalOpen(true);
+            break;
+          }
+          default: {
+            // Generic handling - open URL if provided
+            if (startData.url) {
+              window.open(startData.url, "_blank");
+            }
+            setModalData({
+              message: startData.instructions || "Action started",
+            });
+            setModalType("confirm");
+            setModalOpen(true);
+          }
+        }
+
+        // Notify OpenAI about the action
+        if (window.openai?.sendFollowUpMessage) {
+          await window.openai.sendFollowUpMessage({
+            prompt: `User initiated action: ${action.pluginId}`,
+          });
+        }
+      } catch (error) {
+        alert(
+          `Failed to process action: ${error instanceof Error ? error.message : "Unknown error"}`,
+        );
+      }
+    },
+    [resource],
+  );
+
+  const refreshActions = useCallback(async () => {
     setIsRefreshingActions(true);
     try {
       const userId =
@@ -342,16 +304,51 @@ export const PaywallWidget = ({
         const updatedActions = Array.isArray(data.actions) ? data.actions : [];
         setActions(updatedActions);
         onActionsChange?.(updatedActions);
-        console.log("✅ Actions refreshed:", updatedActions.length);
       }
     } catch (error) {
-      console.error("Error refreshing actions:", error);
+      // Silently handle errors - user can retry if needed
     } finally {
       setIsRefreshingActions(false);
     }
-  };
+  }, [onActionsChange]);
 
-  const handleModalSubmit = () => {
+  const validateAction = useCallback(
+    async (instanceId: string, input: any) => {
+      try {
+        const userId =
+          (window.openai as { user?: { id?: string } })?.user?.id || undefined;
+
+        const res = await fetch("/api/payload/actions/validate", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            actionInstanceId: instanceId,
+            input,
+            userId,
+          }),
+        });
+
+        const data = await res.json();
+
+        if (res.ok && data.status === "completed") {
+          alert("✅ Action completed successfully!");
+          // Refresh actions to remove completed one-time actions
+          await refreshActions();
+        } else {
+          alert(
+            `❌ Action validation failed: ${data.reason || "Unknown error"}`,
+          );
+        }
+      } catch (error) {
+        alert("Failed to validate action. Please try again.");
+      }
+    },
+    [refreshActions],
+  );
+
+  const handleModalSubmit = useCallback(() => {
     if (!modalData?.instanceId) {
       setModalOpen(false);
       return;
@@ -383,46 +380,10 @@ export const PaywallWidget = ({
     setInputValue("");
     setSelectedOption("");
     validateAction(modalData.instanceId, input);
-  };
-
-  const validateAction = async (instanceId: string, input: any) => {
-    try {
-      const userId =
-        (window.openai as { user?: { id?: string } })?.user?.id || undefined;
-
-      console.log("🔍 Validating action:", { instanceId, input, userId });
-
-      const res = await fetch("/api/payload/actions/validate", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          actionInstanceId: instanceId,
-          input,
-          userId,
-        }),
-      });
-
-      const data = await res.json();
-
-      if (res.ok && data.status === "completed") {
-        alert("✅ Action completed successfully!");
-        console.log("Action validated:", data);
-        // Refresh actions to remove completed one-time actions
-        await refreshActions();
-      } else {
-        alert(`❌ Action validation failed: ${data.reason || "Unknown error"}`);
-        console.error("Validation failed:", data);
-      }
-    } catch (error) {
-      console.error("Error validating action:", error);
-      alert("Failed to validate action. Please try again.");
-    }
-  };
+  }, [modalData, modalType, inputValue, selectedOption, validateAction]);
 
   // Get action button label based on pluginId
-  const getActionLabel = (pluginId: string): string => {
+  const getActionLabel = useCallback((pluginId: string): string => {
     switch (pluginId) {
       case "github-star":
         return "Star on GitHub";
@@ -435,7 +396,7 @@ export const PaywallWidget = ({
       default:
         return pluginId.replace(/-/g, " ");
     }
-  };
+  }, []);
 
   return (
     <TooltipProvider>
@@ -488,12 +449,7 @@ export const PaywallWidget = ({
                 <div className="flex items-start justify-center gap-4">
                   <div className="text-right">
                     <span className="text-4xl font-normal text-white font-mono">
-                      {formatUnits(
-                        BigInt(
-                          resource?.accepts?.[0]?.maxAmountRequired || "0",
-                        ),
-                        6,
-                      )}
+                      {formattedAmount}
                     </span>
                   </div>
                   <div className="flex flex-col gap-0 text-sm text-[#7C869C] font-mono leading-none min-w-[80px]">
@@ -634,40 +590,28 @@ export const PaywallWidget = ({
                     Refreshing actions...
                   </div>
                 )}
-                {actions.map((action) => {
-                  console.log(
-                    "🎨 Rendering action button:",
-                    action.id,
-                    action.pluginId,
-                  );
-                  return (
-                    <button
-                      key={action.id}
-                      type="button"
-                      disabled={isRefreshingActions}
-                      className={`w-full rounded-md bg-gradient-to-r from-[#576E96] to-[#7E99C9] px-4 py-2 text-sm font-medium text-white hover:from-[#4a5f82] hover:to-[#6a85b5] transition-all ${
-                        isRefreshingActions
-                          ? "opacity-50 cursor-not-allowed"
-                          : "cursor-pointer"
-                      }`}
-                      onClick={(e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        if (isRefreshingActions) return;
-                        console.log("🔘 BUTTON CLICKED! Action ID:", action.id);
-                        console.log("🔘 Action object:", action);
-                        handleActionClick(action).catch((err) => {
-                          console.error("❌ Error in handleActionClick:", err);
-                        });
-                      }}
-                      onMouseDown={() =>
-                        console.log("🖱️ Mouse down on button:", action.id)
-                      }
-                    >
-                      {getActionLabel(action.pluginId)}
-                    </button>
-                  );
-                })}
+                {actions.map((action) => (
+                  <button
+                    key={action.id}
+                    type="button"
+                    disabled={isRefreshingActions}
+                    className={`w-full rounded-md bg-gradient-to-r from-[#576E96] to-[#7E99C9] px-4 py-2 text-sm font-medium text-white hover:from-[#4a5f82] hover:to-[#6a85b5] transition-all ${
+                      isRefreshingActions
+                        ? "opacity-50 cursor-not-allowed"
+                        : "cursor-pointer"
+                    }`}
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      if (isRefreshingActions) return;
+                      handleActionClick(action).catch(() => {
+                        // Error already handled in handleActionClick
+                      });
+                    }}
+                  >
+                    {getActionLabel(action.pluginId)}
+                  </button>
+                ))}
               </div>
             ) : (
               <div className="space-y-3">
@@ -703,7 +647,7 @@ export const PaywallWidget = ({
                       Refreshing actions...
                     </span>
                   ) : (
-                    `No free actions available (actions.length = ${actions.length})`
+                    "No free actions available"
                   )}
                 </div>
               </div>
@@ -750,13 +694,7 @@ export const PaywallWidget = ({
       </div>
 
       {/* Action Modal */}
-      <Dialog
-        open={modalOpen}
-        onOpenChange={(open) => {
-          console.log("🔔 Modal open state changing:", open);
-          setModalOpen(open);
-        }}
-      >
+      <Dialog open={modalOpen} onOpenChange={setModalOpen}>
         <DialogContent
           className="bg-slate-900 border-slate-700 text-white z-[100]"
           style={{ backgroundColor: "#0f172a", opacity: 1 }}

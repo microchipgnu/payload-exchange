@@ -63,61 +63,58 @@ export async function getAvailableActions(userId?: string) {
     orderBy: desc(actions.createdAt),
   });
 
-  console.log(`getAvailableActions: Found ${allActions.length} active actions`);
-
   // Filter to only actions that are actually available:
   // 1. Must have a sponsor
   // 2. Sponsor must have sufficient balance (at least max_redemption_price)
   const availableActions = allActions.filter((action) => {
     // Must have a sponsor
     if (!action.sponsor) {
-      console.log(`Action ${action.id} filtered out: no sponsor`);
       return false;
     }
 
     // Sponsor must have sufficient balance
     if (action.sponsor.balance < action.max_redemption_price) {
-      console.log(
-        `Action ${action.id} filtered out: insufficient sponsor balance (${action.sponsor.balance.toString()} < ${action.max_redemption_price.toString()})`,
-      );
       return false;
     }
 
     return true;
   });
 
-  console.log(
-    `getAvailableActions: ${availableActions.length} actions after sponsor/balance filter`,
-  );
+  // If userId is provided, batch load redemptions to avoid N+1 queries
+  if (userId && availableActions.length > 0) {
+    // Get all one-time-per-user action IDs
+    const oneTimeActionIds = availableActions
+      .filter((action) => action.recurrence === "one_time_per_user")
+      .map((action) => action.id);
 
-  // If userId is provided, filter out actions user has already redeemed (for one_time_per_user)
-  if (userId) {
-    const filteredActions = [];
-    for (const action of availableActions) {
-      if (action.recurrence === "one_time_per_user") {
-        const pastRedemptions = await db.query.redemptions.findMany({
-          where: and(
-            eq(redemptions.actionId, action.id),
-            eq(redemptions.userId, userId),
-            eq(redemptions.status, "completed"),
-          ),
-        });
-
-        if (pastRedemptions.length === 0) {
-          filteredActions.push(action);
-        } else {
-          console.log(
-            `Action ${action.id} filtered out: user already redeemed`,
-          );
-        }
-      } else {
-        filteredActions.push(action);
-      }
+    // Batch load all redemptions for this user and these actions in a single query
+    let userRedemptions: Array<{ actionId: string }> = [];
+    if (oneTimeActionIds.length > 0) {
+      const allUserRedemptions = await db.query.redemptions.findMany({
+        where: and(
+          eq(redemptions.userId, userId),
+          eq(redemptions.status, "completed"),
+        ),
+        columns: { actionId: true },
+      });
+      userRedemptions = allUserRedemptions.filter((r: { actionId: string }) =>
+        oneTimeActionIds.includes(r.actionId),
+      );
     }
-    console.log(
-      `getAvailableActions: ${filteredActions.length} actions after userId filter`,
-    );
-    return filteredActions;
+
+    // Create a Set for O(1) lookup
+    const redeemedActionIds = new Set(userRedemptions.map((r) => r.actionId));
+
+    // Filter out actions user has already redeemed
+    return availableActions.filter((action) => {
+      if (
+        action.recurrence === "one_time_per_user" &&
+        redeemedActionIds.has(action.id)
+      ) {
+        return false;
+      }
+      return true;
+    });
   }
 
   return availableActions;
@@ -224,7 +221,7 @@ export async function updateSponsorBalance(sponsorId: string, delta: bigint) {
 export async function createAction(params: {
   sponsorId: string;
   pluginId: string;
-  config: Record<string, any>;
+  config: Record<string, unknown>;
   coverageType: "full" | "percent";
   coveragePercent?: number;
   recurrence: "one_time_per_user" | "per_request";

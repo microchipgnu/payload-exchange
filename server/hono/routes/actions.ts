@@ -94,11 +94,9 @@ actionsRouter.post("/start", async (c) => {
 // GET /actions/available
 actionsRouter.get("/available", async (c) => {
   const userId = c.req.query("userId") || c.req.header("x-user-id");
-  console.log("GET /actions/available - userId:", userId);
 
   try {
     const availableActions = await getAvailableActions(userId);
-    console.log("Found available actions:", availableActions.length);
 
     // Serialize actions for JSON response
     const serializedActions = availableActions.map((action) => {
@@ -122,15 +120,6 @@ actionsRouter.get("/available", async (c) => {
       };
     });
 
-    console.log("Returning serialized actions:", serializedActions.length);
-    if (serializedActions.length > 0) {
-      console.log(
-        "Sample action:",
-        JSON.stringify(serializedActions[0], null, 2),
-      );
-    } else {
-      console.log("WARNING: No actions to return!");
-    }
     return c.json({ actions: serializedActions });
   } catch (error) {
     console.error("Error in /actions/available:", error);

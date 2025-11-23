@@ -1,7 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useCallback, useMemo, useState } from "react";
 import { PaywallWidget } from "@/components/paywall-widget";
 import type { Resource } from "@/server/core/resources/types";
 
@@ -31,23 +30,22 @@ interface PaywallClientProps {
 export function PaywallClient({
   initialResource,
   initialActions,
-  userId,
 }: PaywallClientProps) {
-  const router = useRouter();
   const [actions, setActions] = useState<Action[]>(initialActions);
 
-  const handleActionsChange = (updatedActions: Action[]) => {
+  const handleActionsChange = useCallback((updatedActions: Action[]) => {
     setActions(updatedActions);
-    // Optionally refresh the page to get latest data from server
-    router.refresh();
-  };
+  }, []);
 
-  return (
-    <PaywallWidget
-      resource={initialResource}
-      actions={actions}
-      onActionsChange={handleActionsChange}
-    />
+  // Memoize props to prevent unnecessary re-renders
+  const widgetProps = useMemo(
+    () => ({
+      resource: initialResource,
+      actions,
+      onActionsChange: handleActionsChange,
+    }),
+    [initialResource, actions, handleActionsChange],
   );
-}
 
+  return <PaywallWidget {...widgetProps} />;
+}
