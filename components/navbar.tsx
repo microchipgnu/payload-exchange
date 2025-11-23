@@ -53,12 +53,6 @@ export default function Navbar() {
           height={40}
           className="h-auto"
         />
-        <Link
-          href="/sponsor"
-          className="text-white/70 hover:text-white transition-colors text-sm font-medium hidden md:block"
-        >
-          Sponsors
-        </Link>
       </div>
       <div className="flex items-center gap-4">
         {isSignedIn && evmAddress && (

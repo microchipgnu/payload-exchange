@@ -1,7 +1,9 @@
 "use client"
 
 import { useState } from "react"
+import Link from "next/link"
 import AsciiHero from "@/components/ascii-generator"
+import { Button } from "@/components/ui/button"
 
 type AsciiStyle = "dots" | "lines" | "blocks"
 
@@ -59,6 +61,24 @@ export default function Hero() {
           <span className="md:hidden"> </span>
           <br className="hidden md:block" />as payments
         </h1>
+        <div className="flex gap-4 mt-8">
+          <Link href="/sponsor">
+            <Button 
+              className="bg-[#EB7D32] hover:bg-[#EB7D32]/90 text-white border-none rounded-none px-12 py-8 text-lg font-medium uppercase tracking-wide"
+            >
+              START
+            </Button>
+          </Link>
+          <Button 
+            className="bg-gray-800 hover:bg-gray-700 text-white border-none rounded-none px-12 py-8 text-lg font-medium uppercase tracking-wide"
+            onClick={(e) => {
+              e.preventDefault()
+              // Do nothing for now
+            }}
+          >
+            TRY AS A USER
+          </Button>
+        </div>
       </div>
     </section>
   )
