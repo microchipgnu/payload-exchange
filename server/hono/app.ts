@@ -3,7 +3,7 @@ import { actionsRouter } from "./routes/actions";
 import { proxyRouter } from "./routes/proxy";
 import { sponsorsRouter } from "./routes/sponsors";
 
-export const app = new Hono();
+export const app = new Hono().basePath("/api/payload");
 
 // Health check
 app.get("/health", (c) => c.json({ ok: true, service: "payload-exchange" }));

@@ -9,10 +9,10 @@ import type {
  * This is a stub implementation - replace with real x402 client
  */
 export async function getX402ChallengeForResource(
-  resourceUrl: string,
-  method: string = "GET",
-  headers?: Record<string, string>,
-  body?: any,
+  _resourceUrl: string,
+  _method: string = "GET",
+  _headers?: Record<string, string>,
+  _body?: unknown,
 ): Promise<X402Challenge | null> {
   try {
     // In a real implementation, this would:
@@ -24,8 +24,10 @@ export async function getX402ChallengeForResource(
     // TODO: Replace with actual x402 challenge parsing
     return {
       amount: 1000000n, // 1 USDC (6 decimals)
-      currency: "USDC:base",
+      currency: "exact:base",
       network: "base",
+      scheme: "exact",
+      resource: _resourceUrl,
     };
   } catch (error) {
     console.error("Error getting x402 challenge:", error);
@@ -38,7 +40,7 @@ export async function getX402ChallengeForResource(
  * This is a stub implementation - replace with real x402 payment client
  */
 export async function payX402(
-  request: X402PaymentRequest,
+  _request: X402PaymentRequest,
 ): Promise<X402PaymentResponse> {
   try {
     // In a real implementation, this would:

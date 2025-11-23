@@ -8,10 +8,8 @@ export interface ActionConfigMeta {
   recurrence: Recurrence;
 }
 
-export interface X402Challenge {
-  amount: bigint; // smallest units
-  currency: string; // 'USDC:base'
-}
+// Import X402Challenge from x402 types
+import type { X402Challenge } from "@/server/core/x402/types";
 
 export interface CoverageResult {
   sponsorContribution: bigint;
