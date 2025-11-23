@@ -1,111 +1,98 @@
-import { type NextRequest, NextResponse } from "next/server";
+import { handle } from "hono/vercel";
+import type { NextRequest } from "next/server";
+import { app } from "@/server/hono/app";
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
-  "Access-Control-Allow-Headers": "*",
-};
+export const runtime = "nodejs";
 
-export async function GET(req: NextRequest) {
+// Delegate all proxy requests to Hono
+// Convert /api/proxy?url=... format to /api/payload/proxy/:resourceId format
+async function delegateToHono(req: NextRequest) {
   const url = new URL(req.url);
   const targetUrl = url.searchParams.get("url");
 
   if (!targetUrl) {
-    return NextResponse.json(
-      { error: "Missing 'url' query parameter" },
-      { status: 400, headers: corsHeaders },
+    return new Response(
+      JSON.stringify({ error: "Missing 'url' query parameter" }),
+      {
+        status: 400,
+        headers: {
+          "Content-Type": "application/json",
+          "Access-Control-Allow-Origin": "*",
+          "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+          "Access-Control-Allow-Headers": "*",
+        },
+      },
     );
   }
 
-  console.log(`[Proxy] Request to: ${targetUrl}`);
-
-  // Log all incoming headers
-  const headers: Record<string, string> = {};
-  req.headers.forEach((value, key) => {
-    headers[key] = value;
-    console.log(`[Proxy] Incoming Header - ${key}: ${value}`);
-  });
-
-  // Prepare headers for upstream request
-  const upstreamHeaders = new Headers();
-
-  // Forward relevant headers
-  // We explicitly forward x-payment if present
-  const xPayment = req.headers.get("x-payment");
-  if (xPayment) {
-    console.log(`[Proxy] Forwarding x-payment header: ${xPayment}`);
-    upstreamHeaders.set("x-payment", xPayment);
-  }
-
-  // Forward authorization if present
-  const auth = req.headers.get("authorization");
-  if (auth) {
-    upstreamHeaders.set("authorization", auth);
-  }
-
-  // Forward content-type if present
-  const contentType = req.headers.get("content-type");
-  if (contentType) {
-    upstreamHeaders.set("content-type", contentType);
-  }
-
-  // Forward accept header
-  const accept = req.headers.get("accept");
-  if (accept) {
-    upstreamHeaders.set("accept", accept);
-  }
-
   try {
-    console.log(`[Proxy] Fetching upstream: ${targetUrl}`);
-    const response = await fetch(targetUrl, {
-      method: "GET",
-      headers: upstreamHeaders,
-    });
+    // Encode the full URL as the resourceId (Hono route supports full URLs)
+    const encodedResourceId = encodeURIComponent(targetUrl);
 
-    console.log(`[Proxy] Upstream response status: ${response.status}`);
+    // Create a new request URL pointing to the Hono route
+    const baseUrl = new URL(req.url);
+    const honoPath = `/api/payload/proxy/${encodedResourceId}`;
+    const honoUrl = new URL(honoPath, baseUrl.origin);
 
-    // Log upstream response headers
-    response.headers.forEach((value, key) => {
-      console.log(`[Proxy] Upstream Header - ${key}: ${value}`);
-    });
-
-    // Read response body
-    const body = await response.arrayBuffer();
-
-    // Prepare downstream response
-    const responseHeaders = new Headers();
-
-    response.headers.forEach((value, key) => {
-      // Forward all headers except some blocklisted ones usually, but for simplicity/debug lets forward most things
-      // especially those related to 402 flows
-      if (
-        !["content-encoding", "content-length", "transfer-encoding"].includes(
-          key.toLowerCase(),
-        )
-      ) {
-        responseHeaders.set(key, value);
+    // Forward query parameters if any (excluding 'url')
+    url.searchParams.forEach((value, key) => {
+      if (key !== "url") {
+        honoUrl.searchParams.set(key, value);
       }
     });
 
-    // Add CORS headers
-    Object.entries(corsHeaders).forEach(([key, value]) => {
-      responseHeaders.set(key, value);
+    // Create a new request for Hono with all original headers
+    const headers = new Headers();
+    req.headers.forEach((value, key) => {
+      headers.set(key, value);
     });
 
-    return new NextResponse(body, {
-      status: response.status,
-      headers: responseHeaders,
+    // Create request body if present
+    let body: ReadableStream | null = null;
+    if (req.method !== "GET" && req.method !== "HEAD") {
+      body = req.body;
+    }
+
+    const honoRequest = new Request(honoUrl.toString(), {
+      method: req.method,
+      headers,
+      body,
     });
+
+    // Handle with Hono
+    return handle(app)(honoRequest);
   } catch (error) {
-    console.error("[Proxy] Error fetching upstream:", error);
-    return NextResponse.json(
-      { error: "Failed to fetch upstream resource", details: String(error) },
-      { status: 502, headers: corsHeaders },
+    console.error("[Proxy] Error delegating to Hono:", error);
+    return new Response(
+      JSON.stringify({
+        error: "Failed to process proxy request",
+        details: error instanceof Error ? error.message : String(error),
+      }),
+      {
+        status: 500,
+        headers: {
+          "Content-Type": "application/json",
+          "Access-Control-Allow-Origin": "*",
+        },
+      },
     );
   }
 }
 
-// enable CORS for all origins, methods, and headers
+export const GET = delegateToHono;
+export const POST = delegateToHono;
+export const PUT = delegateToHono;
+export const DELETE = delegateToHono;
+export const PATCH = delegateToHono;
+
+// Enable CORS for all origins, methods, and headers
 export const OPTIONS = async () => {
-  return NextResponse.json({}, { status: 200, headers: corsHeaders });
+  return new Response(null, {
+    status: 200,
+    headers: {
+      "Access-Control-Allow-Origin": "*",
+      "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+      "Access-Control-Allow-Headers": "*",
+    },
+  });
 };

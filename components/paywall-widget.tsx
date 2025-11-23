@@ -1,6 +1,6 @@
 "use client";
 
-import { useIsSignedIn, useX402 } from "@coinbase/cdp-hooks";
+import { useEvmAddress, useIsSignedIn, useX402 } from "@coinbase/cdp-hooks";
 import { ChevronDown, RefreshCw } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -86,6 +86,7 @@ export const PaywallWidget = ({
   const maxValueBigInt = BigInt(maxValue);
   console.log("maxValueBigInt", maxValueBigInt);
   const { isSignedIn } = useIsSignedIn();
+  const { evmAddress } = useEvmAddress();
 
   // Modal state for action inputs
   const [modalOpen, setModalOpen] = useState(false);
@@ -158,8 +159,17 @@ export const PaywallWidget = ({
       }
 
       const proxyUrl = `/api/proxy?url=${encodeURIComponent(resource.resource)}`;
+      const headers: HeadersInit = {};
+      
+      // Add user wallet address header if available
+      if (evmAddress) {
+        headers["x-user-wallet-address"] = evmAddress;
+        console.log("[PaywallWidget] Adding user wallet address header:", evmAddress);
+      }
+      
       const response = await fetchWithPayment(proxyUrl, {
         method: "GET",
+        headers,
       });
 
       if (response.ok) {
@@ -191,7 +201,7 @@ export const PaywallWidget = ({
     } finally {
       setIsLoading(false);
     }
-  }, [resource, fetchWithPayment, paymentResponse]);
+  }, [resource, fetchWithPayment, paymentResponse, evmAddress]);
 
   const handleActionClick = useCallback(
     async (action: Action) => {

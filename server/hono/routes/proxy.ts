@@ -7,13 +7,17 @@ import {
   canRedeemActionForUser,
   computeCoverage,
 } from "@/server/core/actions/coverage";
-import { getPlugin } from "@/server/core/actions/registry";
+import { sendUSDCToUser } from "@/server/core/blockchain/send-usdc";
 import type {
   X402Challenge,
   X402PaymentRequiredResponse,
 } from "@/server/core/x402/types";
 import { db } from "@/server/db/client";
-import { getActionForResourceAndUser } from "@/server/db/queries";
+import {
+  createRedemption,
+  getActionForResourceAndUser,
+  updateSponsorBalance,
+} from "@/server/db/queries";
 import { redemptions } from "@/server/db/schema";
 
 const RESPONSE_HEADER_BLOCKLIST = new Set([
@@ -169,6 +173,8 @@ async function proxyHandler(c: Context) {
   const resourceId = c.req.param("resourceId");
   const pathAfterResourceId = c.req.param("*") || "";
   const userId = c.req.header("x-user-id") ?? "anon";
+  const userWalletAddress = c.req.header("x-user-wallet-address");
+  const xPaymentHeader = c.req.header("x-payment");
 
   // Construct target URL from resourceId and remaining path
   // If resourceId looks like a URL, use it directly; otherwise construct from path
@@ -211,6 +217,12 @@ async function proxyHandler(c: Context) {
     }
   });
 
+  // Explicitly forward x-payment header if present
+  if (xPaymentHeader) {
+    console.log("[Proxy] Forwarding x-payment header:", xPaymentHeader);
+    upstreamHeaders.set("x-payment", xPaymentHeader);
+  }
+
   // Extract request body
   let body: ArrayBuffer | undefined;
   let requestBodySize = 0;
@@ -224,6 +236,9 @@ async function proxyHandler(c: Context) {
   console.log("[Proxy Request]", {
     method,
     url: targetUrl.toString(),
+    userId,
+    userWalletAddress: userWalletAddress || "not provided",
+    hasXPaymentHeader: !!xPaymentHeader,
     requestBodySize,
     timestamp: new Date().toISOString(),
   });
@@ -311,8 +326,47 @@ async function proxyHandler(c: Context) {
       }
     })();
 
-    // Handle 402 Payment Required responses - intercept for action redemption
+    // Handle 402 Payment Required responses
     if (upstreamResponse.status === 402) {
+      // If x-payment header is present, forward the request with payment header
+      if (xPaymentHeader) {
+        console.log(
+          "[Proxy] x-payment header present, forwarding request with payment",
+        );
+
+        // Make a new request with x-payment header
+        const paymentResponse = await fetch(targetUrl, {
+          method,
+          headers: upstreamHeaders,
+          body,
+        });
+
+        const paymentResponseHeaders = new Headers();
+        paymentResponse.headers.forEach((value: string, key: string) => {
+          if (!RESPONSE_HEADER_BLOCKLIST.has(key.toLowerCase())) {
+            paymentResponseHeaders.set(key, value);
+          }
+        });
+        paymentResponseHeaders.set("url", targetUrl.toString());
+
+        console.log("[Proxy] Payment request response", {
+          status: paymentResponse.status,
+          url: targetUrl.toString(),
+          timestamp: new Date().toISOString(),
+        });
+
+        return new Response(paymentResponse.body, {
+          status: paymentResponse.status,
+          statusText: paymentResponse.statusText,
+          headers: paymentResponseHeaders,
+        });
+      }
+
+      // No x-payment header - handle sponsorship logic
+      console.log(
+        "[Proxy] 402 response without x-payment header, checking for sponsorship",
+      );
+
       // Clone again for 402 handling (first clone is used for async logging)
       const clonedResponseFor402 = upstreamResponse.clone();
       let challengeBody: unknown = null;
@@ -321,12 +375,9 @@ async function proxyHandler(c: Context) {
         challengeBody = await clonedResponseFor402.json();
       } catch {
         // Response might not be JSON
-      }
-
-      const challenge = parseX402Challenge(upstreamResponse, challengeBody);
-
-      if (!challenge) {
-        // Can't parse challenge, return original 402 response
+        console.warn(
+          "[Proxy] 402 response is not JSON, returning original response",
+        );
         const responseHeaders = new Headers();
         upstreamResponse.headers.forEach((value: string, key: string) => {
           if (!RESPONSE_HEADER_BLOCKLIST.has(key.toLowerCase())) {
@@ -342,22 +393,60 @@ async function proxyHandler(c: Context) {
         });
       }
 
+      const challenge = parseX402Challenge(upstreamResponse, challengeBody);
+
+      if (!challenge) {
+        console.warn(
+          "[Proxy] Could not parse x402 challenge, returning original 402 response",
+        );
+        const responseHeaders = new Headers();
+        upstreamResponse.headers.forEach((value: string, key: string) => {
+          if (!RESPONSE_HEADER_BLOCKLIST.has(key.toLowerCase())) {
+            responseHeaders.set(key, value);
+          }
+        });
+        responseHeaders.set("url", targetUrl.toString());
+
+        return new Response(upstreamResponse.body, {
+          status: upstreamResponse.status,
+          statusText: upstreamResponse.statusText,
+          headers: responseHeaders,
+        });
+      }
+
+      console.log("[Proxy] Parsed x402 challenge", {
+        amount: challenge.amount.toString(),
+        currency: challenge.currency,
+        network: challenge.network,
+        scheme: challenge.scheme,
+      });
+
       // Try to find an action for this user
       const action = await getActionForResourceAndUser(userId);
 
       if (!action) {
-        // No sponsor available, return 402 with challenge info
-        return c.json(
-          {
-            error: "No sponsor available",
-            challenge: {
-              amount: challenge.amount.toString(),
-              currency: challenge.currency,
-            },
-          },
-          402,
-        );
+        console.log("[Proxy] No sponsor available for user", { userId });
+        // No sponsor available, return original 402 response
+        const responseHeaders = new Headers();
+        upstreamResponse.headers.forEach((value: string, key: string) => {
+          if (!RESPONSE_HEADER_BLOCKLIST.has(key.toLowerCase())) {
+            responseHeaders.set(key, value);
+          }
+        });
+        responseHeaders.set("url", targetUrl.toString());
+
+        return new Response(upstreamResponse.body, {
+          status: upstreamResponse.status,
+          statusText: upstreamResponse.statusText,
+          headers: responseHeaders,
+        });
       }
+
+      console.log("[Proxy] Found action for sponsorship", {
+        actionId: action.id,
+        sponsorId: action.sponsorId,
+        userId,
+      });
 
       // Check if user can redeem this action
       const pastCount = await db.query.redemptions.findMany({
@@ -374,32 +463,28 @@ async function proxyHandler(c: Context) {
           pastRedemptionsCount: pastRedemptionsForAction,
         })
       ) {
-        return c.json(
-          {
-            error: "Action already redeemed for this user",
-            challenge: {
-              amount: challenge.amount.toString(),
-              currency: challenge.currency,
-            },
-          },
-          402,
-        );
+        console.log("[Proxy] User cannot redeem action", {
+          userId,
+          actionId: action.id,
+          pastRedemptionsForAction,
+        });
+        // User already redeemed, return original 402 response
+        const responseHeaders = new Headers();
+        upstreamResponse.headers.forEach((value: string, key: string) => {
+          if (!RESPONSE_HEADER_BLOCKLIST.has(key.toLowerCase())) {
+            responseHeaders.set(key, value);
+          }
+        });
+        responseHeaders.set("url", targetUrl.toString());
+
+        return new Response(upstreamResponse.body, {
+          status: upstreamResponse.status,
+          statusText: upstreamResponse.statusText,
+          headers: responseHeaders,
+        });
       }
 
-      // Get plugin and start action
-      const plugin = getPlugin(action.pluginId);
-      if (!plugin) {
-        return c.json({ error: "Unknown plugin" }, 500);
-      }
-
-      const startResult = await plugin.start({
-        userId,
-        resourceId,
-        actionId: action.id,
-        config: action.config as Record<string, unknown>,
-      });
-
-      // Compute coverage before creating redemption
+      // Compute coverage
       const { sponsorContribution, userContribution } = computeCoverage(
         challenge,
         {
@@ -412,11 +497,93 @@ async function proxyHandler(c: Context) {
         },
       );
 
-      // Save redemption instance
-      const { createRedemption } = await import("@/server/db/queries");
+      console.log("[Proxy] Computed coverage", {
+        sponsorContribution: sponsorContribution.toString(),
+        userContribution: userContribution.toString(),
+        totalAmount: challenge.amount.toString(),
+      });
 
-      // Capture metadata for sponsor visibility
-      const metadata: Record<string, unknown> = {
+      // Check if user wallet address is provided
+      if (!userWalletAddress) {
+        console.warn(
+          "[Proxy] User wallet address not provided, cannot send USDC",
+          {
+            userId,
+          },
+        );
+        // Return original 402 response if no wallet address
+        const responseHeaders = new Headers();
+        upstreamResponse.headers.forEach((value: string, key: string) => {
+          if (!RESPONSE_HEADER_BLOCKLIST.has(key.toLowerCase())) {
+            responseHeaders.set(key, value);
+          }
+        });
+        responseHeaders.set("url", targetUrl.toString());
+
+        return new Response(upstreamResponse.body, {
+          status: upstreamResponse.status,
+          statusText: upstreamResponse.statusText,
+          headers: responseHeaders,
+        });
+      }
+
+      // Send USDC to user from treasury wallet
+      console.log("[Proxy] Sending USDC to user", {
+        to: userWalletAddress,
+        amount: sponsorContribution.toString(),
+      });
+
+      const usdcResult = await sendUSDCToUser(
+        userWalletAddress as `0x${string}`,
+        sponsorContribution,
+      );
+
+      if (!usdcResult.success || !usdcResult.transactionHash) {
+        console.error("[Proxy] Failed to send USDC", {
+          error: usdcResult.error,
+          userId,
+          userWalletAddress,
+          amount: sponsorContribution.toString(),
+        });
+        // Return original 402 response if USDC transfer failed
+        const responseHeaders = new Headers();
+        upstreamResponse.headers.forEach((value: string, key: string) => {
+          if (!RESPONSE_HEADER_BLOCKLIST.has(key.toLowerCase())) {
+            responseHeaders.set(key, value);
+          }
+        });
+        responseHeaders.set("url", targetUrl.toString());
+
+        return new Response(upstreamResponse.body, {
+          status: upstreamResponse.status,
+          statusText: upstreamResponse.statusText,
+          headers: responseHeaders,
+        });
+      }
+
+      console.log("[Proxy] USDC sent successfully", {
+        transactionHash: usdcResult.transactionHash,
+        userId,
+        userWalletAddress,
+        amount: sponsorContribution.toString(),
+      });
+
+      // Deduct from sponsor balance
+      try {
+        await updateSponsorBalance(action.sponsorId, -sponsorContribution);
+        console.log("[Proxy] Sponsor balance updated", {
+          sponsorId: action.sponsorId,
+          deductedAmount: sponsorContribution.toString(),
+        });
+      } catch (error) {
+        console.error("[Proxy] Failed to update sponsor balance", {
+          error: error instanceof Error ? error.message : String(error),
+          sponsorId: action.sponsorId,
+        });
+      }
+
+      // Save redemption to database
+      const redemptionMetadata: Record<string, unknown> = {
         requestUrl: targetUrl.toString(),
         httpMethod: method,
         challenge: {
@@ -432,28 +599,54 @@ async function proxyHandler(c: Context) {
           sponsorContribution: sponsorContribution.toString(),
           userContribution: userContribution.toString(),
         },
+        usdcTransfer: {
+          transactionHash: usdcResult.transactionHash,
+          to: userWalletAddress,
+          amount: sponsorContribution.toString(),
+        },
         userAgent: c.req.header("user-agent") || undefined,
         referer: c.req.header("referer") || undefined,
       };
 
-      await createRedemption({
+      const redemptionId = await createRedemption({
         actionId: action.id,
         userId,
         resourceId,
-        instanceId: startResult.instanceId,
+        instanceId: `sponsor-${Date.now()}`,
         sponsored_amount: sponsorContribution,
-        metadata,
+        metadata: redemptionMetadata,
       });
 
-      return c.json({
-        type: "action_required",
-        actionInstanceId: startResult.instanceId,
-        instructions: startResult.instructions,
-        url: startResult.url,
-        coverage: {
-          sponsorContribution: sponsorContribution.toString(),
-          userContribution: userContribution.toString(),
-        },
+      console.log("[Proxy] Redemption saved to database", {
+        redemptionId,
+        actionId: action.id,
+        userId,
+        resourceId,
+      });
+
+      // Mark redemption as completed since we've already sent the USDC
+      const { updateRedemptionStatus } = await import("@/server/db/queries");
+      await updateRedemptionStatus(redemptionId, "completed");
+
+      console.log("[Proxy] Returning original 402 response after sponsorship", {
+        redemptionId,
+        userId,
+        url: targetUrl.toString(),
+      });
+
+      // Return the original 402 response
+      const responseHeaders = new Headers();
+      upstreamResponse.headers.forEach((value: string, key: string) => {
+        if (!RESPONSE_HEADER_BLOCKLIST.has(key.toLowerCase())) {
+          responseHeaders.set(key, value);
+        }
+      });
+      responseHeaders.set("url", targetUrl.toString());
+
+      return new Response(upstreamResponse.body, {
+        status: upstreamResponse.status,
+        statusText: upstreamResponse.statusText,
+        headers: responseHeaders,
       });
     }
 
