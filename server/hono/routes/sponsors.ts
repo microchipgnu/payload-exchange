@@ -7,6 +7,7 @@ import {
   createSponsor,
   getSponsorActions,
   getSponsorByWallet,
+  updateActionStatus,
   updateFundingTransactionStatus,
   updateSponsorBalance,
 } from "@/server/db/queries";
@@ -37,9 +38,12 @@ sponsorsRouter.get("/actions", async (c) => {
     ...action,
     max_redemption_price: action.max_redemption_price.toString(),
     coveragePercent: action.coveragePercent?.toString(),
+    createdAt: action.createdAt.toISOString(),
     redemptions: action.redemptions?.map((redemption) => ({
       ...redemption,
       sponsored_amount: redemption.sponsored_amount.toString(),
+      createdAt: redemption.createdAt.toISOString(),
+      completedAt: redemption.completedAt?.toISOString(),
     })),
   }));
   return c.json({ actions: serializedActions });
@@ -260,4 +264,31 @@ sponsorsRouter.get("/plugins/:id", async (c) => {
     description: description.humanInstructions,
     schema: description.schema,
   });
+});
+
+// PATCH /sponsors/actions/:id/status
+sponsorsRouter.patch("/actions/:id/status", async (c) => {
+  const walletAddress = c.req.header("x-wallet-address");
+  if (!walletAddress) {
+    return c.json({ error: "Wallet address required" }, 401);
+  }
+
+  const actionId = c.req.param("id");
+  const body = await c.req.json<{ active: boolean }>();
+
+  const sponsor = await getSponsorByWallet(walletAddress);
+  if (!sponsor) {
+    return c.json({ error: "Sponsor not found" }, 404);
+  }
+
+  // Verify the action belongs to this sponsor
+  const actions = await getSponsorActions(sponsor.id);
+  const action = actions.find((a) => a.id === actionId);
+  if (!action) {
+    return c.json({ error: "Action not found" }, 404);
+  }
+
+  await updateActionStatus(actionId, body.active);
+
+  return c.json({ success: true, active: body.active });
 });

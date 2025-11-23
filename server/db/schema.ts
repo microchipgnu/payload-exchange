@@ -1,6 +1,7 @@
 import { relations } from "drizzle-orm";
 import {
   bigint,
+  boolean,
   jsonb,
   pgEnum,
   pgTable,
@@ -46,6 +47,7 @@ export const actions = pgTable("actions", {
   max_redemption_price: bigint("max_redemption_price", {
     mode: "bigint",
   }).notNull(),
+  active: boolean("active").notNull().default(true),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 

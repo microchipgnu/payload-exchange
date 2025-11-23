@@ -31,6 +31,17 @@ interface Action {
   coveragePercent?: number;
   recurrence: "one_time_per_user" | "per_request";
   config: Record<string, any>;
+  max_redemption_price: string;
+  active: boolean;
+  createdAt: string;
+  redemptions?: Array<{
+    id: string;
+    userId: string;
+    status: string;
+    sponsored_amount: string;
+    createdAt: string;
+    completedAt?: string;
+  }>;
 }
 
 interface Plugin {
@@ -165,6 +176,32 @@ export default function SponsorActionsPage() {
     } catch (error) {
       console.error("Failed to create action:", error);
       alert("Failed to create action");
+    }
+  };
+
+  const handleToggleAction = async (actionId: string, currentStatus: boolean) => {
+    if (!evmAddress) return;
+    try {
+      const res = await fetch(`/api/payload/sponsors/actions/${actionId}/status`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          "x-wallet-address": evmAddress,
+        },
+        body: JSON.stringify({
+          active: !currentStatus,
+        }),
+      });
+
+      if (res.ok) {
+        loadActions();
+      } else {
+        const errorData = await res.json();
+        alert(errorData.error || "Failed to update action status");
+      }
+    } catch (error) {
+      console.error("Failed to update action status:", error);
+      alert("Failed to update action status");
     }
   };
 
@@ -505,28 +542,113 @@ export default function SponsorActionsPage() {
           <CardTitle>Your Actions</CardTitle>
         </CardHeader>
         <CardContent>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Plugin</TableHead>
-                <TableHead>Coverage</TableHead>
-                <TableHead>Recurrence</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {actions.map((action) => (
-                <TableRow key={action.id}>
-                  <TableCell>{action.pluginId}</TableCell>
-                  <TableCell>
-                    {action.coverageType === "full"
-                      ? "100%"
-                      : `${action.coveragePercent}%`}
-                  </TableCell>
-                  <TableCell>{action.recurrence}</TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+          {actions.length === 0 ? (
+            <p className="text-slate-600 dark:text-slate-400 text-center py-8">
+              No actions created yet. Create your first action above.
+            </p>
+          ) : (
+            <div className="space-y-4">
+              {actions.map((action) => {
+                const maxPriceUSD = (
+                  BigInt(action.max_redemption_price) / BigInt(1_000_000)
+                ).toString();
+                const redemptionsCount = action.redemptions?.length || 0;
+                const completedRedemptions =
+                  action.redemptions?.filter((r) => r.status === "completed")
+                    .length || 0;
+                const createdDate = new Date(action.createdAt).toLocaleDateString();
+
+                return (
+                  <Card key={action.id} className={!action.active ? "opacity-60" : ""}>
+                    <CardHeader>
+                      <div className="flex justify-between items-start">
+                        <div>
+                          <CardTitle className="flex items-center gap-2">
+                            {action.pluginId}
+                            {!action.active && (
+                              <span className="text-xs font-normal text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 px-2 py-1 rounded">
+                                Disabled
+                              </span>
+                            )}
+                          </CardTitle>
+                          <p className="text-sm text-slate-600 dark:text-slate-400 mt-1">
+                            Created: {createdDate}
+                          </p>
+                        </div>
+                        <Button
+                          onClick={() => handleToggleAction(action.id, action.active)}
+                          variant={action.active ? "destructive" : "default"}
+                          size="sm"
+                        >
+                          {action.active ? "Disable" : "Enable"}
+                        </Button>
+                      </div>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="grid md:grid-cols-2 gap-4">
+                        <div>
+                          <p className="text-sm font-semibold mb-2">Configuration</p>
+                          <div className="space-y-1 text-sm">
+                            <p>
+                              <span className="text-slate-600 dark:text-slate-400">
+                                Coverage:
+                              </span>{" "}
+                              {action.coverageType === "full"
+                                ? "100%"
+                                : `${action.coveragePercent}%`}
+                            </p>
+                            <p>
+                              <span className="text-slate-600 dark:text-slate-400">
+                                Recurrence:
+                              </span>{" "}
+                              {action.recurrence.replace(/_/g, " ")}
+                            </p>
+                            <p>
+                              <span className="text-slate-600 dark:text-slate-400">
+                                Max Price:
+                              </span>{" "}
+                              ${maxPriceUSD} USDC
+                            </p>
+                          </div>
+                        </div>
+                        <div>
+                          <p className="text-sm font-semibold mb-2">Statistics</p>
+                          <div className="space-y-1 text-sm">
+                            <p>
+                              <span className="text-slate-600 dark:text-slate-400">
+                                Total Redemptions:
+                              </span>{" "}
+                              {redemptionsCount}
+                            </p>
+                            <p>
+                              <span className="text-slate-600 dark:text-slate-400">
+                                Completed:
+                              </span>{" "}
+                              {completedRedemptions}
+                            </p>
+                            <p>
+                              <span className="text-slate-600 dark:text-slate-400">
+                                Pending:
+                              </span>{" "}
+                              {redemptionsCount - completedRedemptions}
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                      {Object.keys(action.config).length > 0 && (
+                        <div className="mt-4 pt-4 border-t">
+                          <p className="text-sm font-semibold mb-2">Plugin Config</p>
+                          <pre className="text-xs bg-slate-100 dark:bg-slate-800 p-2 rounded overflow-x-auto">
+                            {JSON.stringify(action.config, null, 2)}
+                          </pre>
+                        </div>
+                      )}
+                    </CardContent>
+                  </Card>
+                );
+              })}
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>

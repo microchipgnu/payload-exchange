@@ -4,9 +4,11 @@ import { actions, fundingTransactions, redemptions, sponsors } from "./schema";
 
 export async function getActionForResourceAndUser(userId: string) {
   // Find any available action that:
-  // 1. Has a sponsor with sufficient balance
-  // 2. User hasn't redeemed yet (if one_time_per_user)
+  // 1. Is active
+  // 2. Has a sponsor with sufficient balance
+  // 3. User hasn't redeemed yet (if one_time_per_user)
   const action = await db.query.actions.findFirst({
+    where: eq(actions.active, true),
     with: {
       sponsor: true,
       redemptions: {
@@ -149,8 +151,19 @@ export async function createAction(params: {
     id,
     ...params,
     coveragePercent: params.coveragePercent ?? null,
+    active: true,
   });
   return id;
+}
+
+export async function updateActionStatus(
+  actionId: string,
+  active: boolean,
+) {
+  await db
+    .update(actions)
+    .set({ active })
+    .where(eq(actions.id, actionId));
 }
 
 export async function createFundingTransaction(params: {

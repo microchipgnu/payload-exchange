@@ -29,6 +29,13 @@
       "when": 1763870459648,
       "tag": "0003_calm_wiccan",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1763872290348,
+      "tag": "0004_fixed_wilson_fisk",
+      "breakpoints": true
     }
   ]
 }
