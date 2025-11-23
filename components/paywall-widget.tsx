@@ -328,7 +328,7 @@ export const PaywallWidget = ({
   }, [onActionsChange]);
 
   const validateAction = useCallback(
-    async (instanceId: string, input: any) => {
+    async (instanceId: string, input: Record<string, string>) => {
       try {
         const userId =
           (window.openai as { user?: { id?: string } })?.user?.id || undefined;
@@ -413,6 +413,19 @@ export const PaywallWidget = ({
         return pluginId.replace(/-/g, " ");
     }
   }, []);
+
+  // Get explorer URL based on network and transaction hash
+  const getExplorerUrl = useCallback(
+    (txHash: string): string => {
+      const network = selectedNetwork.toLowerCase();
+      if (network === "polygon") {
+        return `https://polygonscan.com/tx/${txHash}`;
+      }
+      // Default to Base
+      return `https://basescan.org/tx/${txHash}`;
+    },
+    [selectedNetwork],
+  );
 
   return (
     <TooltipProvider>
@@ -554,7 +567,27 @@ export const PaywallWidget = ({
                 </div>
               )}
 
-              {paymentResponse !== null ? (
+              {paymentResponse !== null &&
+              typeof paymentResponse === "object" &&
+              "sendTransactionHash" in paymentResponse ? (
+                <div className="text-emerald-400 text-sm text-center p-2 bg-emerald-900/20 rounded space-y-2">
+                  <div>Payment successful!</div>
+                  {typeof paymentResponse.sendTransactionHash === "string" && (
+                    <div>
+                      <a
+                        href={getExplorerUrl(
+                          paymentResponse.sendTransactionHash,
+                        )}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-emerald-300 hover:text-emerald-200 underline text-xs"
+                      >
+                        View on Explorer
+                      </a>
+                    </div>
+                  )}
+                </div>
+              ) : paymentResponse !== null ? (
                 <div className="text-emerald-400 text-sm text-center p-2 bg-emerald-900/20 rounded">
                   Payment successful!
                 </div>
