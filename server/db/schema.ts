@@ -38,8 +38,10 @@ export const actions = pgTable("actions", {
   coverageType: coverageTypeEnum("coverage_type").notNull(),
   coveragePercent: bigint("coverage_percent", { mode: "number" }),
   recurrence: recurrenceEnum("recurrence").notNull(),
-  max_redemption_price: bigint("max_redemption_price", { mode: "bigint" }).notNull(),
-  createdAt: timestamp("created_at").notNull().defaultNow(),  
+  max_redemption_price: bigint("max_redemption_price", {
+    mode: "bigint",
+  }).notNull(),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
 export const redemptions = pgTable("redemptions", {

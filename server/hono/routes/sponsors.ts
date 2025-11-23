@@ -46,6 +46,7 @@ sponsorsRouter.post("/actions", async (c) => {
     coverageType: "full" | "percent";
     coveragePercent?: number;
     recurrence: "one_time_per_user" | "per_request";
+    maxRedemptionPrice: string;
   }>();
 
   let sponsor = await getSponsorByWallet(walletAddress);

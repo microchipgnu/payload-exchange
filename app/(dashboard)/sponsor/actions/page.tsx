@@ -29,6 +29,11 @@ interface Action {
   coveragePercent?: number;
   recurrence: "one_time_per_user" | "per_request";
   config: Record<string, any>;
+  maxRedemptionPrice: string;
+  redemptions: Array<{
+    status: string;
+    sponsored_amount: string;
+  }>;
 }
 
 interface Plugin {
@@ -43,11 +48,13 @@ export default function SponsorActionsPage() {
   const [plugins, setPlugins] = useState<Plugin[]>([]);
   const [selectedPlugin, setSelectedPlugin] = useState<Plugin | null>(null);
   const [showForm, setShowForm] = useState(false);
+  const [balance, setBalance] = useState<string>("0");
   const [formData, setFormData] = useState({
     pluginId: "",
     coverageType: "full" as "full" | "percent",
     coveragePercent: 100,
     recurrence: "one_time_per_user" as "one_time_per_user" | "per_request",
+    maxPrice: "",
     config: {} as Record<string, any>,
   });
 
@@ -95,14 +102,33 @@ export default function SponsorActionsPage() {
     }
   }, []);
 
+  const loadBalance = useCallback(async () => {
+    try {
+      const res = await fetch("/api/payload/sponsors/analytics", {
+        headers: {
+          "x-wallet-address": "0x0000000000000000000000000000000000000000",
+        },
+      });
+      const data = await res.json();
+      setBalance(data.balance || "0");
+    } catch (error) {
+      console.error("Failed to load balance:", error);
+    }
+  }, []);
+
   useEffect(() => {
     loadPlugins();
     loadActions();
-  }, [loadPlugins, loadActions]);
+    loadBalance();
+  }, [loadPlugins, loadActions, loadBalance]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
+      const maxPriceInSmallestUnits = BigInt(
+        Math.floor(parseFloat(formData.maxPrice) * 1_000_000),
+      );
+
       const res = await fetch("/api/payload/sponsors/actions", {
         method: "POST",
         headers: {
@@ -115,6 +141,7 @@ export default function SponsorActionsPage() {
             formData.coverageType === "percent"
               ? formData.coveragePercent
               : undefined,
+          maxRedemptionPrice: maxPriceInSmallestUnits.toString(),
           config: formData.config,
         }),
       });
@@ -127,6 +154,7 @@ export default function SponsorActionsPage() {
           coverageType: "full",
           coveragePercent: 100,
           recurrence: "one_time_per_user",
+          maxPrice: "",
           config: {},
         });
         loadActions();
@@ -139,7 +167,7 @@ export default function SponsorActionsPage() {
   const renderPluginConfigFields = () => {
     if (!selectedPlugin) return null;
 
-    const { id: pluginId, schema } = selectedPlugin;
+    const { id: pluginId } = selectedPlugin;
 
     // Survey plugin
     if (pluginId === "survey") {
@@ -259,7 +287,7 @@ export default function SponsorActionsPage() {
               max="12"
               value={formData.config.length || 6}
               onChange={(e) =>
-                updateConfigField("length", parseInt(e.target.value) || 6)
+                updateConfigField("length", parseInt(e.target.value, 10) || 6)
               }
             />
           </div>
@@ -288,14 +316,40 @@ export default function SponsorActionsPage() {
     );
   };
 
+  const balanceUSD = (BigInt(balance) / BigInt(1_000_000)).toString();
+
+  const getPluginName = (pluginId: string) => {
+    const names: Record<string, string> = {
+      survey: "Survey",
+      "email-capture": "Email Capture",
+      "github-star": "GitHub Star",
+      "code-verification": "Code Verification",
+    };
+    return names[pluginId] || pluginId;
+  };
+
   return (
     <div className="container mx-auto px-4 py-8">
-      <div className="flex justify-between items-center mb-8">
-        <h1 className="text-3xl font-bold">Actions</h1>
+      <div className="flex justify-between items-center mb-6">
+        <h1 className="text-3xl font-bold">Campaigns</h1>
         <Button onClick={() => setShowForm(!showForm)}>
-          {showForm ? "Cancel" : "Create Action"}
+          {showForm ? "Cancel" : "Create Campaign"}
         </Button>
       </div>
+
+      <Card className="mb-8">
+        <CardContent className="pt-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm text-muted-foreground">Available Balance</p>
+              <p className="text-3xl font-bold">${balanceUSD} USDC</p>
+            </div>
+            <p className="text-sm text-muted-foreground">
+              This balance is used to sponsor user transactions
+            </p>
+          </div>
+        </CardContent>
+      </Card>
 
       {showForm && (
         <Card className="mb-8">
@@ -366,7 +420,7 @@ export default function SponsorActionsPage() {
                     onChange={(e) =>
                       setFormData({
                         ...formData,
-                        coveragePercent: parseInt(e.target.value) || 0,
+                        coveragePercent: parseInt(e.target.value, 10) || 0,
                       })
                     }
                   />
@@ -393,6 +447,23 @@ export default function SponsorActionsPage() {
                 </Select>
               </div>
 
+              <div>
+                <Label>Max Price Per User (USDC)</Label>
+                <Input
+                  type="number"
+                  step="0.01"
+                  min="0.01"
+                  value={formData.maxPrice}
+                  onChange={(e) =>
+                    setFormData({ ...formData, maxPrice: e.target.value })
+                  }
+                  placeholder="1.00"
+                  required
+                />
+                <p className="text-xs text-muted-foreground mt-1">
+                  Maximum amount you'll pay per user redemption
+                </p>
+              </div>
 
               <Button type="submit">Create Action</Button>
             </form>
@@ -402,31 +473,69 @@ export default function SponsorActionsPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Your Actions</CardTitle>
+          <CardTitle>Your Campaigns</CardTitle>
         </CardHeader>
         <CardContent>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Plugin</TableHead>
-                <TableHead>Coverage</TableHead>
-                <TableHead>Recurrence</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {actions.map((action) => (
-                <TableRow key={action.id}>
-                  <TableCell>{action.pluginId}</TableCell>
-                  <TableCell>
-                    {action.coverageType === "full"
-                      ? "100%"
-                      : `${action.coveragePercent}%`}
-                  </TableCell>
-                  <TableCell>{action.recurrence}</TableCell>
+          {actions.length === 0 ? (
+            <div className="text-center py-8">
+              <p className="text-muted-foreground">
+                No campaigns yet. Create your first campaign to start sponsoring
+                users.
+              </p>
+            </div>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Campaign</TableHead>
+                  <TableHead>Max Price</TableHead>
+                  <TableHead>Coverage</TableHead>
+                  <TableHead>Recurrence</TableHead>
+                  <TableHead>Redemptions</TableHead>
+                  <TableHead>Spent</TableHead>
                 </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+              </TableHeader>
+              <TableBody>
+                {actions.map((action) => {
+                  const completedCount =
+                    action.redemptions?.filter((r) => r.status === "completed")
+                      .length || 0;
+                  const totalSpent =
+                    action.redemptions
+                      ?.filter((r) => r.status === "completed")
+                      .reduce(
+                        (sum, r) => sum + BigInt(r.sponsored_amount || "0"),
+                        0n,
+                      ) || 0n;
+                  const spentUSD = (Number(totalSpent) / 1_000_000).toFixed(2);
+                  const maxPriceUSD = (
+                    Number(BigInt(action.maxRedemptionPrice || "0")) / 1_000_000
+                  ).toFixed(2);
+
+                  return (
+                    <TableRow key={action.id}>
+                      <TableCell className="font-medium">
+                        {getPluginName(action.pluginId)}
+                      </TableCell>
+                      <TableCell>${maxPriceUSD}</TableCell>
+                      <TableCell>
+                        {action.coverageType === "full"
+                          ? "100%"
+                          : `${action.coveragePercent}%`}
+                      </TableCell>
+                      <TableCell>
+                        {action.recurrence === "one_time_per_user"
+                          ? "One-time"
+                          : "Repeatable"}
+                      </TableCell>
+                      <TableCell>{completedCount}</TableCell>
+                      <TableCell>${spentUSD}</TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          )}
         </CardContent>
       </Card>
     </div>

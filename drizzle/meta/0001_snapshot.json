@@ -66,12 +66,8 @@
           "name": "actions_sponsor_id_sponsors_id_fk",
           "tableFrom": "actions",
           "tableTo": "sponsors",
-          "columnsFrom": [
-            "sponsor_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["sponsor_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -144,12 +140,8 @@
           "name": "redemptions_action_id_actions_id_fk",
           "tableFrom": "redemptions",
           "tableTo": "actions",
-          "columnsFrom": [
-            "action_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["action_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -204,9 +196,7 @@
         "sponsors_wallet_address_unique": {
           "name": "sponsors_wallet_address_unique",
           "nullsNotDistinct": false,
-          "columns": [
-            "wallet_address"
-          ]
+          "columns": ["wallet_address"]
         }
       },
       "policies": {},
@@ -218,27 +208,17 @@
     "public.action_status": {
       "name": "action_status",
       "schema": "public",
-      "values": [
-        "pending",
-        "completed",
-        "failed"
-      ]
+      "values": ["pending", "completed", "failed"]
     },
     "public.coverage_type": {
       "name": "coverage_type",
       "schema": "public",
-      "values": [
-        "full",
-        "percent"
-      ]
+      "values": ["full", "percent"]
     },
     "public.recurrence": {
       "name": "recurrence",
       "schema": "public",
-      "values": [
-        "one_time_per_user",
-        "per_request"
-      ]
+      "values": ["one_time_per_user", "per_request"]
     }
   },
   "schemas": {},
