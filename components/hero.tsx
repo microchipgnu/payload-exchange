@@ -34,8 +34,8 @@ export default function Hero() {
           asciiStyle={asciiStyle}
         />
       </div>
-      <div className="relative z-10 w-full px-8 md:px-16">
-        <h1 className="geist text-5xl md:text-6xl lg:text-7xl xl:text-8xl font-[500] text-white leading-none">
+      <div className="relative z-10 w-full px-8 md:px-16 -mt-80 md:mt-0">
+        <h1 className="geist text-6xl md:text-6xl lg:text-7xl xl:text-8xl font-[500] text-white leading-none">
           Accept any{" "}
           <span
             onClick={handleDataClick}
@@ -56,7 +56,8 @@ export default function Hero() {
           >
             data
           </span>
-          <br />as payments
+          <span className="md:hidden"> </span>
+          <br className="hidden md:block" />as payments
         </h1>
       </div>
     </section>
