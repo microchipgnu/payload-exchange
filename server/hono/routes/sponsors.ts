@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import { TREASURY_WALLET_ADDRESS } from "@/lib/config";
 import { getPlugin, listPlugins } from "@/server/core/actions/registry";
+import { verifyUSDCTransfer } from "@/server/core/blockchain/verify-transaction";
 import {
   createAction,
   createFundingTransaction,
@@ -143,8 +144,33 @@ sponsorsRouter.post("/fund", async (c) => {
     transactionHash: body.transactionHash,
   });
 
-  // If transaction hash is provided (client-side transaction), mark as completed
+  // If transaction hash is provided (client-side transaction), verify it on-chain
   if (body.transactionHash) {
+    // Verify the transaction on-chain before crediting balance
+    const verification = await verifyUSDCTransfer(
+      body.transactionHash,
+      walletAddress as `0x${string}`,
+      treasuryWallet as `0x${string}`,
+      amount,
+    );
+
+    if (!verification.success || !verification.verified) {
+      // Mark transaction as failed
+      await updateFundingTransactionStatus(
+        fundingTransactionId,
+        "failed",
+        body.transactionHash,
+      );
+      return c.json(
+        {
+          error: "Transaction verification failed",
+          details: verification.error || "Transaction could not be verified",
+        },
+        400,
+      );
+    }
+
+    // Transaction verified successfully - update status and credit balance
     await updateFundingTransactionStatus(
       fundingTransactionId,
       "completed",
@@ -159,6 +185,7 @@ sponsorsRouter.post("/fund", async (c) => {
       transactionHash: body.transactionHash,
       fundingTransactionId,
       newBalance: updatedSponsor?.balance.toString() || "0",
+      verified: true,
     });
   }
 

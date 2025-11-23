@@ -50,12 +50,22 @@ export const emailCapturePlugin: ActionPlugin<EmailCaptureConfig> = {
       };
     }
 
-    // Basic email validation
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(email)) {
+    // Trim whitespace and validate
+    const trimmedEmail = email.trim();
+    if (!trimmedEmail) {
       return {
         status: "failed",
-        reason: "Invalid email format",
+        reason: "Email is required",
+        rewardEligible: false,
+      };
+    }
+
+    // Basic email validation (more permissive regex)
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(trimmedEmail)) {
+      return {
+        status: "failed",
+        reason: `Invalid email format: "${trimmedEmail}"`,
         rewardEligible: false,
       };
     }

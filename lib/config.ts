@@ -10,7 +10,7 @@ export const TREASURY_WALLET_ADDRESS =
   process.env.TREASURY_WALLET_ADDRESS ||
   "0x0000000000000000000000000000000000000000";
 
-// USDC contract address on Base Sepolia
+// USDC contract address on Base mainnet
 export const USDC_CONTRACT_ADDRESS =
   process.env.USDC_CONTRACT_ADDRESS ||
-  "0x036CbD53842c5426634e7929541eC2318f3dCF7e";
+  "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913";

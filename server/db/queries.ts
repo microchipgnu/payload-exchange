@@ -53,6 +53,76 @@ export async function getSponsorActions(sponsorId: string) {
   });
 }
 
+export async function getAvailableActions(userId?: string) {
+  // Get all active actions with sponsors
+  const allActions = await db.query.actions.findMany({
+    where: eq(actions.active, true),
+    with: {
+      sponsor: true,
+    },
+    orderBy: desc(actions.createdAt),
+  });
+
+  console.log(`getAvailableActions: Found ${allActions.length} active actions`);
+
+  // Filter to only actions that are actually available:
+  // 1. Must have a sponsor
+  // 2. Sponsor must have sufficient balance (at least max_redemption_price)
+  const availableActions = allActions.filter((action) => {
+    // Must have a sponsor
+    if (!action.sponsor) {
+      console.log(`Action ${action.id} filtered out: no sponsor`);
+      return false;
+    }
+
+    // Sponsor must have sufficient balance
+    if (action.sponsor.balance < action.max_redemption_price) {
+      console.log(
+        `Action ${action.id} filtered out: insufficient sponsor balance (${action.sponsor.balance.toString()} < ${action.max_redemption_price.toString()})`,
+      );
+      return false;
+    }
+
+    return true;
+  });
+
+  console.log(
+    `getAvailableActions: ${availableActions.length} actions after sponsor/balance filter`,
+  );
+
+  // If userId is provided, filter out actions user has already redeemed (for one_time_per_user)
+  if (userId) {
+    const filteredActions = [];
+    for (const action of availableActions) {
+      if (action.recurrence === "one_time_per_user") {
+        const pastRedemptions = await db.query.redemptions.findMany({
+          where: and(
+            eq(redemptions.actionId, action.id),
+            eq(redemptions.userId, userId),
+            eq(redemptions.status, "completed"),
+          ),
+        });
+
+        if (pastRedemptions.length === 0) {
+          filteredActions.push(action);
+        } else {
+          console.log(
+            `Action ${action.id} filtered out: user already redeemed`,
+          );
+        }
+      } else {
+        filteredActions.push(action);
+      }
+    }
+    console.log(
+      `getAvailableActions: ${filteredActions.length} actions after userId filter`,
+    );
+    return filteredActions;
+  }
+
+  return availableActions;
+}
+
 export async function getSponsorByWallet(walletAddress: string) {
   return db.query.sponsors.findFirst({
     where: eq(sponsors.walletAddress, walletAddress),
@@ -102,6 +172,19 @@ export async function updateRedemptionStatus(
 export async function getRedemption(redemptionId: string) {
   return db.query.redemptions.findFirst({
     where: eq(redemptions.id, redemptionId),
+    with: {
+      action: {
+        with: {
+          sponsor: true,
+        },
+      },
+    },
+  });
+}
+
+export async function getRedemptionByInstanceId(instanceId: string) {
+  return db.query.redemptions.findFirst({
+    where: eq(redemptions.instanceId, instanceId),
     with: {
       action: {
         with: {

@@ -1,14 +1,30 @@
 "use client";
 
+import { useIsSignedIn, useX402 } from "@coinbase/cdp-hooks";
+import { ChevronDown, RefreshCw } from "lucide-react";
+import Link from "next/link";
+import { useEffect, useState } from "react";
+import { formatUnits } from "viem";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { CardContent } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { MagicCard } from "@/components/ui/magic-card";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
+  SelectValue,
 } from "@/components/ui/select";
 import {
   Tooltip,
@@ -18,31 +34,88 @@ import {
 } from "@/components/ui/tooltip";
 import { WalletAuth } from "@/components/wallet-auth";
 import type { Resource } from "@/server/core/resources/types";
-import { useIsSignedIn, useX402 } from "@coinbase/cdp-hooks";
-import { ChevronDown } from "lucide-react";
-import Link from "next/link";
-import { useEffect, useState } from "react";
-import { formatUnits } from "viem";
+
+interface Action {
+  id: string;
+  pluginId: string;
+  config: Record<string, unknown>;
+  coverageType: "full" | "percent";
+  coveragePercent?: string;
+  recurrence: "one_time_per_user" | "per_request";
+  maxRedemptionPrice: string;
+  active: boolean;
+  createdAt: string;
+  sponsor: {
+    id: string;
+    walletAddress: string;
+    balance: string;
+  } | null;
+}
 
 interface PaywallWidgetProps {
   resource?: Resource | null;
+  actions?: Action[];
+  onActionsChange?: (actions: Action[]) => void;
 }
 
 export const PaywallWidget = ({
   resource: initialResource,
+  actions: initialActions = [],
+  onActionsChange,
 }: PaywallWidgetProps = {}) => {
   const [resource, setResource] = useState<Resource | null>(
     initialResource ?? null,
   );
+  const [actions, setActions] = useState<Action[]>(initialActions);
   const [selectedNetwork, setSelectedNetwork] = useState("Base");
   const [isNetworkSelectOpen, setIsNetworkSelectOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [isRefreshingActions, setIsRefreshingActions] = useState(false);
   const [paymentResponse, setPaymentResponse] = useState<unknown>(null);
   const [error, setError] = useState<string | null>(null);
   const { fetchWithPayment } = useX402({
     maxValue: BigInt(resource?.accepts?.[0]?.maxAmountRequired || "0"),
   });
   const { isSignedIn } = useIsSignedIn();
+
+  // Modal state for action inputs
+  const [modalOpen, setModalOpen] = useState(false);
+  const [modalType, setModalType] = useState<
+    "survey" | "email" | "confirm" | null
+  >(null);
+  const [modalData, setModalData] = useState<{
+    instanceId?: string;
+    question?: string;
+    options?: string[];
+    placeholder?: string;
+    message?: string;
+  } | null>(null);
+  const [inputValue, setInputValue] = useState("");
+  const [selectedOption, setSelectedOption] = useState("");
+
+  // Debug modal state changes
+  useEffect(() => {
+    console.log("🔔 Modal state changed:", {
+      open: modalOpen,
+      type: modalType,
+      data: modalData,
+    });
+  }, [modalOpen, modalType, modalData]);
+
+  // Sync actions prop with state
+  useEffect(() => {
+    const actionsToSet = Array.isArray(initialActions) ? initialActions : [];
+    console.log("🎨 [PAYWALL WIDGET] Props changed:", {
+      received: initialActions?.length || 0,
+      setting: actionsToSet.length,
+    });
+    setActions(actionsToSet);
+    console.log(
+      "✅ [PAYWALL WIDGET] State updated with",
+      actionsToSet.length,
+      "actions",
+    );
+  }, [initialActions]);
 
   useEffect(() => {
     // Only listen for OpenAI events if no resource was provided as a prop
@@ -122,33 +195,245 @@ export const PaywallWidget = ({
     }
   };
 
-  const handleGitHubStar = async () => {
-    console.log("GitHub star clicked");
-    window.open("https://github.com/microchipgnu/mcpay", "_blank");
-    if (window.openai?.sendFollowUpMessage) {
-      await window.openai.sendFollowUpMessage({
-        prompt: "User starred the repository on GitHub",
+  const handleActionClick = async (action: Action) => {
+    console.log("🖱️ Action clicked:", action);
+    console.log("🖱️ Action ID:", action.id);
+    console.log("🖱️ Plugin ID:", action.pluginId);
+
+    try {
+      // Get userId from OpenAI context if available
+      const userId =
+        (window.openai as { user?: { id?: string } })?.user?.id || undefined;
+      console.log("🖱️ User ID:", userId);
+
+      const requestBody = {
+        actionId: action.id,
+        userId,
+        resourceId: resource?.resource || "paywall",
+      };
+      console.log("🖱️ Starting action with:", requestBody);
+
+      // Start the action
+      const startRes = await fetch("/api/payload/actions/start", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(requestBody),
       });
+
+      console.log("🖱️ Start response status:", startRes.status);
+
+      if (!startRes.ok) {
+        const error = await startRes.json();
+        console.error("❌ Failed to start action:", error);
+        alert(`Failed to start action: ${error.error || "Unknown error"}`);
+        return;
+      }
+
+      const startData = await startRes.json();
+      console.log("✅ Action started:", startData);
+
+      // Handle action based on plugin type
+      switch (action.pluginId) {
+        case "github-star": {
+          // Open GitHub URL
+          const repo = action.config.repository as string;
+          const githubUrl = repo
+            ? `https://github.com/${repo}`
+            : startData.url || "";
+          if (githubUrl) {
+            window.open(githubUrl, "_blank");
+            // Show confirmation modal after a delay
+            setTimeout(() => {
+              setModalData({
+                instanceId: startData.instanceId,
+                message: "Have you starred the repository?",
+              });
+              setModalType("confirm");
+              setModalOpen(true);
+            }, 2000);
+          }
+          break;
+        }
+        case "survey": {
+          // Show survey modal
+          const question = action.config.question as string;
+          const type = action.config.type as string;
+          const options = action.config.options as string[];
+
+          console.log("📋 Setting up survey modal:", {
+            question,
+            type,
+            options,
+          });
+          setModalData({
+            instanceId: startData.instanceId,
+            question,
+            options: type === "multiple-choice" ? options : undefined,
+          });
+          setModalType("survey");
+          setInputValue("");
+          setSelectedOption("");
+          console.log("📋 Opening survey modal");
+          setModalOpen(true);
+          console.log("📋 Modal open state should be true now");
+          break;
+        }
+        case "email-capture": {
+          // Show email modal
+          const placeholder =
+            (action.config.placeholder as string) || "your@email.com";
+          console.log("📧 Setting up email modal:", { placeholder });
+          setModalData({
+            instanceId: startData.instanceId,
+            placeholder,
+          });
+          setModalType("email");
+          setInputValue("");
+          console.log("📧 Opening email modal");
+          setModalOpen(true);
+          console.log("📧 Modal open state should be true now");
+          break;
+        }
+        default: {
+          // Generic handling - open URL if provided
+          if (startData.url) {
+            window.open(startData.url, "_blank");
+          }
+          setModalData({
+            message: startData.instructions || "Action started",
+          });
+          setModalType("confirm");
+          setModalOpen(true);
+        }
+      }
+
+      // Notify OpenAI about the action
+      if (window.openai?.sendFollowUpMessage) {
+        await window.openai.sendFollowUpMessage({
+          prompt: `User initiated action: ${action.pluginId}`,
+        });
+      }
+    } catch (error) {
+      console.error("❌ Error handling action:", error);
+      if (error instanceof Error) {
+        console.error("❌ Error message:", error.message);
+        console.error("❌ Error stack:", error.stack);
+      }
+      alert(
+        `Failed to process action: ${error instanceof Error ? error.message : "Unknown error"}`,
+      );
     }
   };
 
-  const handleFollowX = async () => {
-    console.log("Follow on X clicked");
-    window.open("https://x.com/x420yo", "_blank");
-    if (window.openai?.sendFollowUpMessage) {
-      await window.openai.sendFollowUpMessage({
-        prompt: "User followed on X",
-      });
+  const refreshActions = async () => {
+    setIsRefreshingActions(true);
+    try {
+      const userId =
+        (window.openai as { user?: { id?: string } })?.user?.id || undefined;
+      const url = userId
+        ? `/api/payload/actions/available?userId=${userId}`
+        : "/api/payload/actions/available";
+
+      const res = await fetch(url);
+      if (res.ok) {
+        const data = await res.json();
+        const updatedActions = Array.isArray(data.actions) ? data.actions : [];
+        setActions(updatedActions);
+        onActionsChange?.(updatedActions);
+        console.log("✅ Actions refreshed:", updatedActions.length);
+      }
+    } catch (error) {
+      console.error("Error refreshing actions:", error);
+    } finally {
+      setIsRefreshingActions(false);
     }
   };
 
-  const handleSurvey = async () => {
-    console.log("Survey clicked");
-    window.open("https://forms.gle/your-survey", "_blank");
-    if (window.openai?.sendFollowUpMessage) {
-      await window.openai.sendFollowUpMessage({
-        prompt: "User completed the survey",
+  const handleModalSubmit = () => {
+    if (!modalData?.instanceId) {
+      setModalOpen(false);
+      return;
+    }
+
+    let input: Record<string, string> = {};
+
+    if (modalType === "email") {
+      if (!inputValue) return;
+      // Trim whitespace from email input
+      const trimmedEmail = inputValue.trim();
+      if (!trimmedEmail) return;
+      input = { email: trimmedEmail };
+    } else if (modalType === "survey") {
+      const answer =
+        modalData.options && modalData.options.length > 0
+          ? selectedOption
+          : inputValue;
+      if (!answer) return;
+      input = { answer };
+    } else if (modalType === "confirm") {
+      // For GitHub star confirmation
+      const userId =
+        (window.openai as { user?: { id?: string } })?.user?.id || "user";
+      input = { githubUsername: userId };
+    }
+
+    setModalOpen(false);
+    setInputValue("");
+    setSelectedOption("");
+    validateAction(modalData.instanceId, input);
+  };
+
+  const validateAction = async (instanceId: string, input: any) => {
+    try {
+      const userId =
+        (window.openai as { user?: { id?: string } })?.user?.id || undefined;
+
+      console.log("🔍 Validating action:", { instanceId, input, userId });
+
+      const res = await fetch("/api/payload/actions/validate", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          actionInstanceId: instanceId,
+          input,
+          userId,
+        }),
       });
+
+      const data = await res.json();
+
+      if (res.ok && data.status === "completed") {
+        alert("✅ Action completed successfully!");
+        console.log("Action validated:", data);
+        // Refresh actions to remove completed one-time actions
+        await refreshActions();
+      } else {
+        alert(`❌ Action validation failed: ${data.reason || "Unknown error"}`);
+        console.error("Validation failed:", data);
+      }
+    } catch (error) {
+      console.error("Error validating action:", error);
+      alert("Failed to validate action. Please try again.");
+    }
+  };
+
+  // Get action button label based on pluginId
+  const getActionLabel = (pluginId: string): string => {
+    switch (pluginId) {
+      case "github-star":
+        return "Star on GitHub";
+      case "survey":
+        return "Answer survey";
+      case "email-capture":
+        return "Enter email";
+      case "code-verification":
+        return "Verify code";
+      default:
+        return pluginId.replace(/-/g, " ");
     }
   };
 
@@ -304,47 +589,125 @@ export const PaywallWidget = ({
               ) : null}
             </div>
 
-            {/* Separator */}
-            <div className="flex items-center justify-center gap-5 py-4">
-              <div className="w-24 border-t border-slate-700" />
-              <span className="text-base uppercase font-mono text-white">
-                OR
-              </span>
-              <div className="w-24 border-t border-slate-700" />
-            </div>
+            {/* Separator - only show if there are actions */}
+            {actions.length > 0 && (
+              <div className="flex items-center justify-center gap-5 py-4">
+                <div className="w-24 border-t border-slate-700" />
+                <span className="text-base uppercase font-mono text-white">
+                  OR
+                </span>
+                <div className="w-24 border-t border-slate-700" />
+              </div>
+            )}
 
             {/* Free Options */}
-            <div className="space-y-3">
-              <Badge variant="shimmer" className="text-xs px-2 py-0.5">
-                FREE
-              </Badge>
-              <Button
-                variant="customPrimary"
-                size="default"
-                className="w-full"
-                onClick={handleGitHubStar}
-              >
-                Star on GitHub
-              </Button>
-
-              <Button
-                variant="customPrimary"
-                size="default"
-                className="w-full"
-                onClick={handleFollowX}
-              >
-                Follow on X
-              </Button>
-
-              <Button
-                variant="customPrimary"
-                size="default"
-                className="w-full"
-                onClick={handleSurvey}
-              >
-                Answer survey
-              </Button>
-            </div>
+            {actions.length > 0 ? (
+              <div className="space-y-3">
+                <div className="flex items-center justify-between gap-2">
+                  <Badge variant="shimmer" className="text-xs px-2 py-0.5">
+                    FREE
+                  </Badge>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={refreshActions}
+                    disabled={isRefreshingActions}
+                    className={`h-7 w-7 p-0 transition-all ${
+                      isRefreshingActions
+                        ? "text-white opacity-100"
+                        : "text-[#7C869C] hover:text-white hover:bg-slate-800"
+                    }`}
+                    title={
+                      isRefreshingActions ? "Refreshing..." : "Refresh actions"
+                    }
+                  >
+                    <RefreshCw
+                      className={`h-3.5 w-3.5 ${
+                        isRefreshingActions ? "animate-spin" : ""
+                      }`}
+                    />
+                  </Button>
+                </div>
+                {isRefreshingActions && (
+                  <div className="text-xs text-[#7C869C] text-center py-2 flex items-center justify-center gap-2">
+                    <RefreshCw className="h-3 w-3 animate-spin" />
+                    Refreshing actions...
+                  </div>
+                )}
+                {actions.map((action) => {
+                  console.log(
+                    "🎨 Rendering action button:",
+                    action.id,
+                    action.pluginId,
+                  );
+                  return (
+                    <button
+                      key={action.id}
+                      type="button"
+                      disabled={isRefreshingActions}
+                      className={`w-full rounded-md bg-gradient-to-r from-[#576E96] to-[#7E99C9] px-4 py-2 text-sm font-medium text-white hover:from-[#4a5f82] hover:to-[#6a85b5] transition-all ${
+                        isRefreshingActions
+                          ? "opacity-50 cursor-not-allowed"
+                          : "cursor-pointer"
+                      }`}
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        if (isRefreshingActions) return;
+                        console.log("🔘 BUTTON CLICKED! Action ID:", action.id);
+                        console.log("🔘 Action object:", action);
+                        handleActionClick(action).catch((err) => {
+                          console.error("❌ Error in handleActionClick:", err);
+                        });
+                      }}
+                      onMouseDown={() =>
+                        console.log("🖱️ Mouse down on button:", action.id)
+                      }
+                    >
+                      {getActionLabel(action.pluginId)}
+                    </button>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="space-y-3">
+                <div className="flex items-center justify-between gap-2">
+                  <Badge variant="shimmer" className="text-xs px-2 py-0.5">
+                    FREE
+                  </Badge>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={refreshActions}
+                    disabled={isRefreshingActions}
+                    className={`h-7 w-7 p-0 transition-all ${
+                      isRefreshingActions
+                        ? "text-white opacity-100"
+                        : "text-[#7C869C] hover:text-white hover:bg-slate-800"
+                    }`}
+                    title={
+                      isRefreshingActions ? "Refreshing..." : "Refresh actions"
+                    }
+                  >
+                    <RefreshCw
+                      className={`h-3.5 w-3.5 ${
+                        isRefreshingActions ? "animate-spin" : ""
+                      }`}
+                    />
+                  </Button>
+                </div>
+                <div className="text-sm text-[#7C869C] text-center py-4">
+                  {isRefreshingActions ? (
+                    <span className="flex items-center justify-center gap-2">
+                      <RefreshCw className="h-4 w-4 animate-spin" />
+                      Refreshing actions...
+                    </span>
+                  ) : (
+                    `No free actions available (actions.length = ${actions.length})`
+                  )}
+                </div>
+              </div>
+            )}
 
             {/* Footer */}
             <Link
@@ -385,6 +748,145 @@ export const PaywallWidget = ({
           </CardContent>
         </MagicCard>
       </div>
+
+      {/* Action Modal */}
+      <Dialog
+        open={modalOpen}
+        onOpenChange={(open) => {
+          console.log("🔔 Modal open state changing:", open);
+          setModalOpen(open);
+        }}
+      >
+        <DialogContent
+          className="bg-slate-900 border-slate-700 text-white z-[100]"
+          style={{ backgroundColor: "#0f172a", opacity: 1 }}
+        >
+          <DialogHeader>
+            <DialogTitle>
+              {modalType === "email"
+                ? "Enter Your Email"
+                : modalType === "survey"
+                  ? "Answer Survey"
+                  : "Confirm Action"}
+            </DialogTitle>
+            <DialogDescription className="text-slate-400">
+              {modalType === "email"
+                ? "Please provide your email address to continue"
+                : modalType === "survey"
+                  ? modalData?.question || "Please answer the question"
+                  : modalData?.message || "Please confirm your action"}
+            </DialogDescription>
+          </DialogHeader>
+
+          {modalType === "email" && (
+            <div className="space-y-4 py-4">
+              <div className="space-y-2">
+                <Label htmlFor="email" className="text-slate-300">
+                  Email Address
+                </Label>
+                <Input
+                  id="email"
+                  type="email"
+                  placeholder={modalData?.placeholder || "your@email.com"}
+                  value={inputValue}
+                  onChange={(e) => setInputValue(e.target.value)}
+                  className="bg-slate-800 border-slate-600 text-white"
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && inputValue) {
+                      handleModalSubmit();
+                    }
+                  }}
+                />
+              </div>
+            </div>
+          )}
+
+          {modalType === "survey" && (
+            <div className="space-y-4 py-4">
+              {modalData?.options && modalData.options.length > 0 ? (
+                <div className="space-y-2">
+                  <Label className="text-slate-300">Select an option</Label>
+                  <Select
+                    value={selectedOption}
+                    onValueChange={setSelectedOption}
+                  >
+                    <SelectTrigger className="bg-slate-800 border-slate-600 text-white">
+                      <SelectValue placeholder="Choose an option..." />
+                    </SelectTrigger>
+                    <SelectContent className="bg-slate-800 border-slate-600">
+                      {modalData.options.map((option) => (
+                        <SelectItem
+                          key={option}
+                          value={option}
+                          className="text-white focus:bg-slate-700"
+                        >
+                          {option}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  <Label htmlFor="answer" className="text-slate-300">
+                    Your Answer
+                  </Label>
+                  <Input
+                    id="answer"
+                    type="text"
+                    placeholder="Enter your answer..."
+                    value={inputValue}
+                    onChange={(e) => setInputValue(e.target.value)}
+                    className="bg-slate-800 border-slate-600 text-white"
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && inputValue) {
+                        handleModalSubmit();
+                      }
+                    }}
+                  />
+                </div>
+              )}
+            </div>
+          )}
+
+          {modalType === "confirm" && (
+            <div className="py-4">
+              <p className="text-slate-300">{modalData?.message}</p>
+            </div>
+          )}
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setModalOpen(false);
+                setInputValue("");
+                setSelectedOption("");
+              }}
+              className="border-slate-600 text-slate-300 hover:bg-slate-800"
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleModalSubmit}
+              disabled={
+                (modalType === "email" && !inputValue) ||
+                (modalType === "survey" &&
+                  !inputValue &&
+                  !selectedOption &&
+                  !modalData?.options) ||
+                (modalType === "survey" &&
+                  modalData?.options &&
+                  modalData.options.length > 0 &&
+                  !selectedOption)
+              }
+              className="bg-emerald-600 hover:bg-emerald-700 text-white"
+            >
+              Submit
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </TooltipProvider>
   );
 };
