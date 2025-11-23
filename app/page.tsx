@@ -92,7 +92,7 @@ export default function Home() {
         )}
         <ol className="list-inside list-decimal text-center font-mono text-sm/6 sm:text-left">
           <li className="mb-2 tracking-[-.01em]">
-            Welcome to the ChatGPT Apps SDK Next.js Starter
+            Welcome to Payload.exchange
           </li>
           <li className="mb-2 tracking-[-.01em]">
             Name returned from tool call: {name ?? "..."}
