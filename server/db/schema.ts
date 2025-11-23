@@ -111,3 +111,33 @@ export const fundingTransactionsRelations = relations(
 export const sponsorsFundingRelations = relations(sponsors, ({ many }) => ({
   fundingTransactions: many(fundingTransactions),
 }));
+
+export const responseProofs = pgTable("response_proofs", {
+  id: text("id").primaryKey(),
+  resourceId: varchar("resource_id", { length: 500 }).notNull(),
+  url: text("url").notNull(),
+  method: varchar("method", { length: 10 }).notNull(),
+  statusCode: bigint("status_code", { mode: "number" }).notNull(),
+  statusText: varchar("status_text", { length: 255 }),
+  proof: text("proof").notNull(), // Hex proof data
+  userId: varchar("user_id", { length: 255 }),
+  sponsorId: text("sponsor_id").references(() => sponsors.id, {
+    onDelete: "set null",
+  }),
+  actionId: text("action_id").references(() => actions.id, {
+    onDelete: "set null",
+  }),
+  metadata: jsonb("metadata").$type<Record<string, unknown>>(),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const responseProofsRelations = relations(responseProofs, ({ one }) => ({
+  sponsor: one(sponsors, {
+    fields: [responseProofs.sponsorId],
+    references: [sponsors.id],
+  }),
+  action: one(actions, {
+    fields: [responseProofs.actionId],
+    references: [actions.id],
+  }),
+}));

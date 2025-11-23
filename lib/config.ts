@@ -14,3 +14,8 @@ export const TREASURY_WALLET_ADDRESS =
 export const USDC_CONTRACT_ADDRESS =
   process.env.USDC_CONTRACT_ADDRESS ||
   "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913";
+
+// VLayer configuration
+export const VLAYER_API_ENDPOINT = process.env.VLAYER_API_ENDPOINT || "";
+export const VLAYER_CLIENT_ID = process.env.VLAYER_CLIENT_ID || "";
+export const VLAYER_BEARER_TOKEN = process.env.VLAYER_BEARER_TOKEN || "";

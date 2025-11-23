@@ -43,6 +43,13 @@
       "when": 1763876772397,
       "tag": "0005_furry_doomsday",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1763893526892,
+      "tag": "0006_massive_albert_cleary",
+      "breakpoints": true
     }
   ]
 }

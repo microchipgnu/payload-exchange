@@ -1,6 +1,12 @@
 import { and, desc, eq } from "drizzle-orm";
 import { db } from "./client";
-import { actions, fundingTransactions, redemptions, sponsors } from "./schema";
+import {
+  actions,
+  fundingTransactions,
+  redemptions,
+  responseProofs,
+  sponsors,
+} from "./schema";
 
 export async function getActionForResourceAndUser(userId: string) {
   // Find any available action that:
@@ -166,6 +172,18 @@ export async function updateRedemptionStatus(
     .where(eq(redemptions.id, redemptionId));
 }
 
+export async function updateRedemptionSponsoredAmount(
+  redemptionId: string,
+  sponsored_amount: bigint,
+) {
+  await db
+    .update(redemptions)
+    .set({
+      sponsored_amount,
+    })
+    .where(eq(redemptions.id, redemptionId));
+}
+
 export async function getRedemption(redemptionId: string) {
   return db.query.redemptions.findFirst({
     where: eq(redemptions.id, redemptionId),
@@ -280,6 +298,81 @@ export async function getFundingTransaction(fundingTransactionId: string) {
     where: eq(fundingTransactions.id, fundingTransactionId),
     with: {
       sponsor: true,
+    },
+  });
+}
+
+export async function createResponseProof(params: {
+  resourceId: string;
+  url: string;
+  method: string;
+  statusCode: number;
+  statusText?: string;
+  proof: string;
+  userId?: string;
+  sponsorId?: string;
+  actionId?: string;
+  metadata?: Record<string, unknown>;
+}) {
+  const id = crypto.randomUUID();
+  await db.insert(responseProofs).values({
+    id,
+    ...params,
+  });
+  return id;
+}
+
+export async function getResponseProofsBySponsor(
+  sponsorId: string,
+  limit = 100,
+) {
+  return db.query.responseProofs.findMany({
+    where: eq(responseProofs.sponsorId, sponsorId),
+    orderBy: desc(responseProofs.createdAt),
+    limit,
+    with: {
+      action: true,
+    },
+  });
+}
+
+export async function getResponseProofsByResource(
+  resourceId: string,
+  limit = 100,
+) {
+  return db.query.responseProofs.findMany({
+    where: eq(responseProofs.resourceId, resourceId),
+    orderBy: desc(responseProofs.createdAt),
+    limit,
+    with: {
+      sponsor: true,
+      action: true,
+    },
+  });
+}
+
+export async function getResponseProof(proofId: string) {
+  return db.query.responseProofs.findFirst({
+    where: eq(responseProofs.id, proofId),
+    with: {
+      sponsor: true,
+      action: true,
+    },
+  });
+}
+
+export async function getFailedResponseProofs(sponsorId?: string, limit = 100) {
+  const conditions = [eq(responseProofs.statusCode, 500)];
+  if (sponsorId) {
+    conditions.push(eq(responseProofs.sponsorId, sponsorId));
+  }
+  return db.query.responseProofs.findMany({
+    where: and(...conditions),
+    orderBy: desc(responseProofs.createdAt),
+    limit,
+    with: {
+      sponsor: true,
+      action: true,
     },
   });
 }

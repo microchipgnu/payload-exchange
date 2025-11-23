@@ -1,13 +1,16 @@
+import { and, eq } from "drizzle-orm";
 import { Hono } from "hono";
 import { getPlugin } from "@/server/core/actions/registry";
 import { payX402 } from "@/server/core/x402/client";
+import { db } from "@/server/db/client";
 import {
   getAvailableActions,
-  getRedemption,
   getRedemptionByInstanceId,
+  updateRedemptionSponsoredAmount,
   updateRedemptionStatus,
   updateSponsorBalance,
 } from "@/server/db/queries";
+import { redemptions } from "@/server/db/schema";
 
 export const actionsRouter = new Hono();
 
@@ -183,25 +186,79 @@ actionsRouter.post("/validate", async (c) => {
     return c.json({ error: "Sponsor not found" }, 500);
   }
 
-  // Calculate coverage amount (simplified - should use actual challenge amount)
-  // For now, we'll need to store the challenge amount in the redemption
-  // This is a simplified version
-  const challengeAmount = 1000000n; // TODO: Get from stored challenge
+  // Determine the actual amount to deduct
+  // The proxy flow may have created a separate redemption with the actual amount
+  // Check if there's a completed redemption for the same action/user/resource with actual amount
+  let actualAmount = redemption.sponsored_amount;
+
+  // Look for completed redemptions for the same action/user/resource
+  // These would have been created by the proxy flow with the actual amount
+  const completedRedemptions = await db.query.redemptions.findMany({
+    where: and(
+      eq(redemptions.actionId, action.id),
+      eq(redemptions.userId, userId),
+      eq(redemptions.resourceId, redemption.resourceId),
+      eq(redemptions.status, "completed"),
+    ),
+    orderBy: (redemptions, { desc }) => [desc(redemptions.createdAt)],
+    limit: 1,
+  });
+
+  // If proxy flow already processed this and deducted balance, don't deduct again
+  if (completedRedemptions.length > 0) {
+    const completedRedemption = completedRedemptions[0];
+    actualAmount = completedRedemption.sponsored_amount;
+
+    // Update the current redemption's sponsored_amount to match the actual amount
+    if (redemption.sponsored_amount !== actualAmount) {
+      await updateRedemptionSponsoredAmount(redemption.id, actualAmount);
+    }
+
+    // Mark this redemption as completed without deducting (already deducted by proxy flow)
+    await updateRedemptionStatus(actionInstanceId, "completed");
+
+    return c.json({
+      status: "completed",
+      message: "Redemption already processed by proxy flow",
+      actualAmount: actualAmount.toString(),
+    });
+  }
+
+  // Check if redemption metadata contains the actual amount (from proxy flow)
+  const metadata = redemption.metadata as Record<string, unknown> | undefined;
+
+  // If metadata contains coverage information with the actual sponsor contribution,
+  // use that instead of the max_redemption_price
+  if (metadata?.coverage && typeof metadata.coverage === "object") {
+    const coverage = metadata.coverage as Record<string, unknown>;
+    if (
+      coverage.sponsorContribution &&
+      typeof coverage.sponsorContribution === "string"
+    ) {
+      try {
+        actualAmount = BigInt(coverage.sponsorContribution);
+        // Update the redemption record with the actual amount
+        await updateRedemptionSponsoredAmount(redemption.id, actualAmount);
+      } catch {
+        // If parsing fails, use the existing sponsored_amount
+      }
+    }
+  }
 
   try {
-    // Deduct sponsor balance
-    await updateSponsorBalance(sponsor.id, -challengeAmount);
+    // Deduct sponsor balance using the actual amount sent
+    await updateSponsorBalance(sponsor.id, -actualAmount);
 
     // Pay x402 upstream
     const paymentResult = await payX402({
-      amount: challengeAmount,
+      amount: actualAmount,
       currency: "USDC:base",
       network: "base",
     });
 
     if (!paymentResult.success) {
       // Refund sponsor if payment failed
-      await updateSponsorBalance(sponsor.id, challengeAmount);
+      await updateSponsorBalance(sponsor.id, actualAmount);
       return c.json(
         { error: "Payment failed", reason: paymentResult.error },
         500,

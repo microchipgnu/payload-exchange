@@ -6,6 +6,9 @@ import {
   createAction,
   createFundingTransaction,
   createSponsor,
+  getFailedResponseProofs,
+  getResponseProof,
+  getResponseProofsBySponsor,
   getSponsorActions,
   getSponsorByWallet,
   updateActionStatus,
@@ -330,4 +333,130 @@ sponsorsRouter.patch("/actions/:id/status", async (c) => {
   await updateActionStatus(actionId, body.active);
 
   return c.json({ success: true, active: body.active });
+});
+
+// GET /sponsors/proofs
+sponsorsRouter.get("/proofs", async (c) => {
+  const walletAddress = c.req.header("x-wallet-address");
+  if (!walletAddress) {
+    return c.json({ error: "Wallet address required" }, 401);
+  }
+
+  const sponsor = await getSponsorByWallet(walletAddress);
+  if (!sponsor) {
+    return c.json({ error: "Sponsor not found" }, 404);
+  }
+
+  const limit = Number.parseInt(c.req.query("limit") || "100", 10);
+  const proofs = await getResponseProofsBySponsor(sponsor.id, limit);
+
+  // Serialize proofs for JSON response
+  const serializedProofs = proofs.map((proof) => ({
+    id: proof.id,
+    resourceId: proof.resourceId,
+    url: proof.url,
+    method: proof.method,
+    statusCode: proof.statusCode,
+    statusText: proof.statusText,
+    proof: proof.proof,
+    userId: proof.userId,
+    actionId: proof.actionId,
+    metadata: proof.metadata || undefined,
+    createdAt: proof.createdAt.toISOString(),
+    action: proof.action
+      ? {
+          id: proof.action.id,
+          pluginId: proof.action.pluginId,
+          coverageType: proof.action.coverageType,
+        }
+      : undefined,
+  }));
+
+  return c.json({ proofs: serializedProofs });
+});
+
+// GET /sponsors/proofs/failed
+sponsorsRouter.get("/proofs/failed", async (c) => {
+  const walletAddress = c.req.header("x-wallet-address");
+  if (!walletAddress) {
+    return c.json({ error: "Wallet address required" }, 401);
+  }
+
+  const sponsor = await getSponsorByWallet(walletAddress);
+  if (!sponsor) {
+    return c.json({ error: "Sponsor not found" }, 404);
+  }
+
+  const limit = Number.parseInt(c.req.query("limit") || "100", 10);
+  const failedProofs = await getFailedResponseProofs(sponsor.id, limit);
+
+  // Serialize proofs for JSON response
+  const serializedProofs = failedProofs.map((proof) => ({
+    id: proof.id,
+    resourceId: proof.resourceId,
+    url: proof.url,
+    method: proof.method,
+    statusCode: proof.statusCode,
+    statusText: proof.statusText,
+    proof: proof.proof,
+    userId: proof.userId,
+    actionId: proof.actionId,
+    metadata: proof.metadata || undefined,
+    createdAt: proof.createdAt.toISOString(),
+    action: proof.action
+      ? {
+          id: proof.action.id,
+          pluginId: proof.action.pluginId,
+          coverageType: proof.action.coverageType,
+        }
+      : undefined,
+  }));
+
+  return c.json({ proofs: serializedProofs });
+});
+
+// GET /sponsors/proofs/:id
+sponsorsRouter.get("/proofs/:id", async (c) => {
+  const walletAddress = c.req.header("x-wallet-address");
+  if (!walletAddress) {
+    return c.json({ error: "Wallet address required" }, 401);
+  }
+
+  const sponsor = await getSponsorByWallet(walletAddress);
+  if (!sponsor) {
+    return c.json({ error: "Sponsor not found" }, 404);
+  }
+
+  const proofId = c.req.param("id");
+  const proof = await getResponseProof(proofId);
+
+  if (!proof) {
+    return c.json({ error: "Proof not found" }, 404);
+  }
+
+  // Verify the proof belongs to this sponsor
+  if (proof.sponsorId !== sponsor.id) {
+    return c.json({ error: "Unauthorized" }, 403);
+  }
+
+  return c.json({
+    id: proof.id,
+    resourceId: proof.resourceId,
+    url: proof.url,
+    method: proof.method,
+    statusCode: proof.statusCode,
+    statusText: proof.statusText,
+    proof: proof.proof,
+    userId: proof.userId,
+    actionId: proof.actionId,
+    metadata: proof.metadata || undefined,
+    createdAt: proof.createdAt.toISOString(),
+    action: proof.action
+      ? {
+          id: proof.action.id,
+          pluginId: proof.action.pluginId,
+          coverageType: proof.action.coverageType,
+        }
+      : undefined,
+  });
 });

@@ -4,6 +4,11 @@ import { Hono } from "hono";
 import { selectPaymentRequirements } from "x402/client";
 import type { PaymentRequirements } from "x402/types";
 import {
+  VLAYER_API_ENDPOINT,
+  VLAYER_BEARER_TOKEN,
+  VLAYER_CLIENT_ID,
+} from "@/lib/config";
+import {
   canRedeemActionForUser,
   computeCoverage,
 } from "@/server/core/actions/coverage";
@@ -15,10 +20,12 @@ import type {
 import { db } from "@/server/db/client";
 import {
   createRedemption,
+  createResponseProof,
   getActionForResourceAndUser,
   updateSponsorBalance,
 } from "@/server/db/queries";
 import { redemptions } from "@/server/db/schema";
+import { VLayer } from "@/server/lib/vlayer";
 
 const RESPONSE_HEADER_BLOCKLIST = new Set([
   "content-encoding",
@@ -27,6 +34,16 @@ const RESPONSE_HEADER_BLOCKLIST = new Set([
 ]);
 
 const REQUEST_HEADER_BLOCKLIST = new Set(["host", "content-length"]);
+
+// Initialize VLayer client if configured
+let vlayerClient: VLayer | null = null;
+if (VLAYER_API_ENDPOINT && VLAYER_CLIENT_ID && VLAYER_BEARER_TOKEN) {
+  vlayerClient = new VLayer({
+    apiEndpoint: VLAYER_API_ENDPOINT,
+    clientId: VLAYER_CLIENT_ID,
+    bearerToken: VLAYER_BEARER_TOKEN,
+  });
+}
 
 const extractRequestBody = async (request: Request) => {
   const contentType = request.headers.get("content-type") ?? "";
@@ -175,6 +192,10 @@ async function proxyHandler(c: Context) {
   const userId = c.req.header("x-user-id") ?? "anon";
   const userWalletAddress = c.req.header("x-user-wallet-address");
   const xPaymentHeader = c.req.header("x-payment");
+  // VLayer is opt-in via header, defaults to disabled
+  const enableVLayer =
+    c.req.header("x-enable-vlayer")?.toLowerCase() === "true" ||
+    c.req.header("x-vlayer-enabled")?.toLowerCase() === "true";
 
   // Construct target URL from resourceId and remaining path
   // If resourceId looks like a URL, use it directly; otherwise construct from path
@@ -270,6 +291,229 @@ async function proxyHandler(c: Context) {
     // Handle response asynchronously (similar to Next.js 'after')
     void (async () => {
       try {
+        // Generate and save VLayer proof for all responses
+        // Note: VLayer proof generation is optional - failures won't block the proxy
+        // VLayer is opt-in via header (x-enable-vlayer or x-vlayer-enabled), defaults to disabled
+        if (enableVLayer && vlayerClient && VLAYER_API_ENDPOINT) {
+          try {
+            // Prepare headers for VLayer (exclude sensitive auth headers that VLayer can't replay)
+            const headers: string[] = [];
+            upstreamHeaders.forEach((value, key) => {
+              // Skip x-payment and other auth headers that VLayer can't replay
+              const lowerKey = key.toLowerCase();
+              if (
+                lowerKey !== "x-payment" &&
+                lowerKey !== "authorization" &&
+                lowerKey !== "cookie"
+              ) {
+                headers.push(`${key}: ${value}`);
+              }
+            });
+
+            // Get request body text if available
+            let bodyText: string | undefined;
+            const contentType = upstreamHeaders.get("content-type") || "";
+            if (
+              body &&
+              body.byteLength > 0 &&
+              (contentType.includes("text") ||
+                contentType.includes("json") ||
+                contentType.includes("form"))
+            ) {
+              try {
+                bodyText = new TextDecoder().decode(body);
+              } catch {
+                // If body can't be decoded as text, skip it
+              }
+            }
+
+            // Try to generate proof using VLayer
+            // Note: VLayer may fail for authenticated requests, so we catch and log
+            let proofResult: {
+              proof: {
+                data: string;
+                version: string;
+                meta: { notaryUrl: string };
+              };
+              httpResponse: {
+                status: number;
+                statusText: string;
+                headers?: Record<string, string>;
+                body?: string;
+              };
+            };
+
+            try {
+              // First try executeWithProof (VLayer executes the request)
+              proofResult = await vlayerClient.executeWithProof({
+                url: targetUrl.toString(),
+                method: method as "GET" | "POST" | "PUT" | "PATCH" | "DELETE",
+                headers,
+                body: bodyText,
+              });
+            } catch (executeError) {
+              // If executeWithProof fails, VLayer API might be down or misconfigured
+              // Log the error but don't try fallback since generateWebProof uses the same API
+              const errorMessage =
+                executeError instanceof Error
+                  ? executeError.message
+                  : String(executeError);
+
+              // Check if it's a 500 error (VLayer API issue) vs other errors
+              const isVLayerApiError =
+                errorMessage.includes("500") ||
+                errorMessage.includes("Internal Server Error");
+
+              if (isVLayerApiError) {
+                console.warn(
+                  "[VLayer] API returned 500 error - VLayer service may be down or misconfigured",
+                  {
+                    url: targetUrl.toString(),
+                    error: errorMessage,
+                    suggestion:
+                      "Check VLAYER_API_ENDPOINT, VLAYER_CLIENT_ID, and VLAYER_BEARER_TOKEN environment variables",
+                  },
+                );
+                // Don't try fallback - VLayer API is not working
+                throw executeError;
+              }
+
+              // For other errors, try generateWebProof as fallback
+              console.warn(
+                "[VLayer] executeWithProof failed, trying generateWebProof fallback",
+                {
+                  url: targetUrl.toString(),
+                  error: errorMessage,
+                },
+              );
+
+              try {
+                // Generate proof for the request (VLayer will execute it without auth)
+                // Note: This won't match our actual response, but provides a proof of the request
+                const proof = await vlayerClient.generateWebProof({
+                  url: targetUrl.toString(),
+                  method: method as "GET" | "POST" | "PUT" | "PATCH" | "DELETE",
+                  headers,
+                  body: bodyText,
+                });
+
+                // Use the actual response we received instead of VLayer's response
+                proofResult = {
+                  proof,
+                  httpResponse: {
+                    status: upstreamResponse.status,
+                    statusText: upstreamResponse.statusText,
+                    headers: Object.fromEntries(upstreamResponse.headers),
+                    body: await clonedUpstreamResponse.text().catch(() => ""),
+                  },
+                };
+              } catch (fallbackError) {
+                // Fallback also failed - VLayer API is not working
+                throw fallbackError;
+              }
+            }
+
+            // Determine sponsorId and actionId if this was a sponsored request
+            let sponsorId: string | undefined;
+            let actionId: string | undefined;
+
+            // Check if there's an action for this resource/user
+            try {
+              const action = await getActionForResourceAndUser(userId);
+              if (action) {
+                sponsorId = action.sponsorId;
+                actionId = action.id;
+              }
+            } catch {
+              // Ignore errors when checking for action
+            }
+
+            // Save proof to database using the actual response status
+            await createResponseProof({
+              resourceId,
+              url: targetUrl.toString(),
+              method,
+              statusCode: upstreamResponse.status, // Use actual response status
+              statusText: upstreamResponse.statusText,
+              proof: proofResult.proof.data,
+              userId,
+              sponsorId,
+              actionId,
+              metadata: {
+                proofVersion: proofResult.proof.version,
+                notaryUrl: proofResult.proof.meta.notaryUrl,
+                fetchDuration,
+                vlayerResponseStatus: proofResult.httpResponse.status, // VLayer's response status
+                actualResponseStatus: upstreamResponse.status, // Our actual response status
+                responseHeaders: Object.fromEntries(upstreamResponse.headers),
+              },
+            });
+
+            console.log("[VLayer] Proof saved", {
+              resourceId,
+              url: targetUrl.toString(),
+              statusCode: upstreamResponse.status,
+              sponsorId,
+              proofVersion: proofResult.proof.version,
+            });
+
+            // For failed responses (5xx), log for resolution/refund requests
+            if (upstreamResponse.status >= 500) {
+              console.warn("[VLayer] Failed response detected", {
+                resourceId,
+                url: targetUrl.toString(),
+                statusCode: upstreamResponse.status,
+                sponsorId,
+                actionId,
+              });
+            }
+          } catch (proofError) {
+            // Log detailed error information for debugging
+            const errorMessage =
+              proofError instanceof Error
+                ? proofError.message
+                : String(proofError);
+
+            // Determine if this is a VLayer API issue or a different error
+            const isVLayerApiError =
+              errorMessage.includes("500") ||
+              errorMessage.includes("Internal Server Error") ||
+              errorMessage.includes("VLayer API error");
+
+            if (isVLayerApiError) {
+              // VLayer API is down or misconfigured - log as warning, not error
+              console.warn(
+                "[VLayer] API unavailable - proof generation skipped",
+                {
+                  url: targetUrl.toString(),
+                  method,
+                  error: errorMessage,
+                  impact:
+                    "Proofs will not be saved until VLayer API is available",
+                  suggestion:
+                    "Check VLayer API endpoint configuration and service status",
+                },
+              );
+            } else {
+              // Other errors (network, parsing, etc.)
+              console.error("[VLayer] Failed to generate/save proof", {
+                url: targetUrl.toString(),
+                method,
+                error: errorMessage,
+                vlayerConfigured: !!vlayerClient,
+                hasEndpoint: !!VLAYER_API_ENDPOINT,
+              });
+            }
+
+            // Don't throw - proof generation failure shouldn't block the response
+            // The proxy should continue to work even if VLayer fails
+            // Proofs are optional - they help with verification but aren't required for functionality
+          }
+        } else if (!VLAYER_API_ENDPOINT) {
+          // VLayer is not configured - this is fine, just skip proof generation
+          // No need to log unless in debug mode
+        }
+
         if (upstreamResponse.status === 402) {
           const upstreamX402Response =
             (await clonedUpstreamResponse.json()) as unknown;
