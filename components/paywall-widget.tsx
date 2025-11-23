@@ -1,9 +1,5 @@
 "use client";
 
-import { useX402 } from "@coinbase/cdp-hooks";
-import { ChevronDown } from "lucide-react";
-import Link from "next/link";
-import { useEffect, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { CardContent } from "@/components/ui/card";
@@ -20,7 +16,13 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { WalletAuth } from "@/components/wallet-auth";
 import type { Resource } from "@/server/core/resources/types";
+import { useIsSignedIn, useX402 } from "@coinbase/cdp-hooks";
+import { ChevronDown } from "lucide-react";
+import Link from "next/link";
+import { useEffect, useState } from "react";
+import { formatUnits } from "viem";
 
 interface PaywallWidgetProps {
   resource?: Resource | null;
@@ -37,7 +39,10 @@ export const PaywallWidget = ({
   const [isLoading, setIsLoading] = useState(false);
   const [paymentResponse, setPaymentResponse] = useState<unknown>(null);
   const [error, setError] = useState<string | null>(null);
-  const { fetchWithPayment } = useX402();
+  const { fetchWithPayment } = useX402({
+    maxValue: BigInt(resource?.accepts?.[0]?.maxAmountRequired || "0"),
+  });
+  const { isSignedIn } = useIsSignedIn();
 
   useEffect(() => {
     // Only listen for OpenAI events if no resource was provided as a prop
@@ -198,7 +203,12 @@ export const PaywallWidget = ({
                 <div className="flex items-start justify-center gap-4">
                   <div className="text-right">
                     <span className="text-4xl font-normal text-white font-mono">
-                      0.1
+                      {formatUnits(
+                        BigInt(
+                          resource?.accepts?.[0]?.maxAmountRequired || "0",
+                        ),
+                        6,
+                      )}
                     </span>
                   </div>
                   <div className="flex flex-col gap-0 text-sm text-[#7C869C] font-mono leading-none min-w-[80px]">
@@ -243,22 +253,10 @@ export const PaywallWidget = ({
                               Base
                             </SelectItem>
                             <SelectItem
-                              value="Avax"
+                              value="Polygon"
                               className="focus:bg-gradient-to-r focus:from-[#576E96] focus:to-[#7E99C9] rounded-sm focus:rounded-sm data-[highlighted]:rounded-sm"
                             >
-                              Avax
-                            </SelectItem>
-                            <SelectItem
-                              value="Sei"
-                              className="focus:bg-gradient-to-r focus:from-[#576E96] focus:to-[#7E99C9] rounded-sm focus:rounded-sm data-[highlighted]:rounded-sm"
-                            >
-                              Sei
-                            </SelectItem>
-                            <SelectItem
-                              value="Solana"
-                              className="focus:bg-gradient-to-r focus:from-[#576E96] focus:to-[#7E99C9] rounded-sm focus:rounded-sm data-[highlighted]:rounded-sm"
-                            >
-                              Solana
+                              Polygon
                             </SelectItem>
                           </SelectContent>
                         </Select>
@@ -273,15 +271,25 @@ export const PaywallWidget = ({
                   </div>
                 </div>
               </div>
-
-              <Button
-                variant="customSecondary"
-                className="w-full"
-                onClick={handleSignTransaction}
-                disabled={isLoading || !resource?.resource}
-              >
-                {isLoading ? "Processing Payment..." : "Sign Transaction"}
-              </Button>
+              {!isSignedIn ? (
+                <div className="w-full">
+                  <div className="rounded-lg border border-slate-700 bg-slate-800/50 px-4 py-3">
+                    <p className="mb-3 text-center text-sm text-[#7C869C] font-mono">
+                      Please sign in to proceed with payment
+                    </p>
+                    <WalletAuth />
+                  </div>
+                </div>
+              ) : (
+                <Button
+                  variant="customSecondary"
+                  className="w-full"
+                  onClick={handleSignTransaction}
+                  disabled={isLoading || !resource?.resource}
+                >
+                  {isLoading ? "Processing Payment..." : "Sign Transaction"}
+                </Button>
+              )}
 
               {error && (
                 <div className="text-red-400 text-sm text-center p-2 bg-red-900/20 rounded">
