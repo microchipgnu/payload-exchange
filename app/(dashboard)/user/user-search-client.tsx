@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -105,18 +104,16 @@ export default function UserSearchClient({
         )}
 
         {resources.map((resource) => (
-          <Link key={resource.id} href={`/user/resources/${resource.id}`}>
-            <Card className="hover:border-primary cursor-pointer transition-colors">
-              <CardHeader>
-                <CardTitle className="truncate">{resource.url}</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <p className="text-slate-600 dark:text-slate-400 text-sm">
-                  {resource.description || "No description available"}
-                </p>
-              </CardContent>
-            </Card>
-          </Link>
+          <Card key={resource.id}>
+            <CardHeader>
+              <CardTitle className="truncate">{resource.url}</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="text-slate-600 dark:text-slate-400 text-sm">
+                {resource.description || "No description available"}
+              </p>
+            </CardContent>
+          </Card>
         ))}
       </div>
     </div>
